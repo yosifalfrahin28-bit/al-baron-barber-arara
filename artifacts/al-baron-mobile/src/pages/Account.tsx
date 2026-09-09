@@ -80,10 +80,15 @@ export default function Account() {
             </div>
             
             <div className="flex flex-row-reverse items-center gap-5 my-6">
-              <div className="text-4xl font-bold text-primary">#{activeTicket.number}</div>
+              <div className="text-center">
+                <div className="text-4xl font-bold text-primary">{activeTicket.status === 'serving' ? 'الآن' : `#${activeTicket.queuePosition ?? '—'}`}</div>
+                {activeTicket.status !== 'serving' && <div className="mt-1 text-[10px] text-muted-foreground">موقعك الحالي</div>}
+              </div>
               <div className="text-right">
                 <div className="text-sm font-bold text-foreground">{activeTicket.service}</div>
-                <div className="text-xs mt-1.5 text-muted-foreground">مع {activeTicket.barber}</div>
+                <div className="text-xs mt-1.5 text-muted-foreground">
+                  {activeTicket.status === 'serving' ? 'جاري خدمتك الآن' : `قبلك ${activeTicket.peopleAhead ?? 0} أشخاص`} · {activeTicket.barber}
+                </div>
               </div>
             </div>
             

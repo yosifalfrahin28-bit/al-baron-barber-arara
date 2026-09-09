@@ -19,6 +19,14 @@ export const HealthCheckResponse = zod.object({
 /**
  * @summary Read the live salon state
  */
+export const getSalonStateResponseCurrentTicketOneQueuePositionMin = 0;
+
+export const getSalonStateResponseCurrentTicketOnePeopleAheadMin = 0;
+
+export const getSalonStateResponseWaitingTicketsItemQueuePositionMin = 0;
+
+export const getSalonStateResponseWaitingTicketsItemPeopleAheadMin = 0;
+
 
 export const getSalonStateResponseScheduleItemOneDayOfWeekMin = 0;
 export const getSalonStateResponseScheduleItemOneDayOfWeekMax = 6;
@@ -47,6 +55,8 @@ export const GetSalonStateResponse = zod.object({
   "barber": zod.string(),
   "service": zod.string(),
   "status": zod.string(),
+  "queuePosition": zod.number().int().min(getSalonStateResponseCurrentTicketOneQueuePositionMin),
+  "peopleAhead": zod.number().int().min(getSalonStateResponseCurrentTicketOnePeopleAheadMin),
   "reminderSent": zod.boolean(),
   "createdAt": zod.coerce.date()
 }),zod.null()]),
@@ -58,6 +68,8 @@ export const GetSalonStateResponse = zod.object({
   "barber": zod.string(),
   "service": zod.string(),
   "status": zod.string(),
+  "queuePosition": zod.number().int().min(getSalonStateResponseWaitingTicketsItemQueuePositionMin),
+  "peopleAhead": zod.number().int().min(getSalonStateResponseWaitingTicketsItemPeopleAheadMin),
   "reminderSent": zod.boolean(),
   "createdAt": zod.coerce.date()
 })),
@@ -525,6 +537,12 @@ export const CreateTicketBody = zod.object({
   "service": zod.string()
 })
 
+export const createTicketResponseQueuePositionMin = 0;
+
+export const createTicketResponsePeopleAheadMin = 0;
+
+
+
 export const CreateTicketResponse = zod.object({
   "id": zod.string(),
   "number": zod.number().int(),
@@ -533,6 +551,8 @@ export const CreateTicketResponse = zod.object({
   "barber": zod.string(),
   "service": zod.string(),
   "status": zod.string(),
+  "queuePosition": zod.number().int().min(createTicketResponseQueuePositionMin),
+  "peopleAhead": zod.number().int().min(createTicketResponsePeopleAheadMin),
   "reminderSent": zod.boolean(),
   "createdAt": zod.coerce.date()
 })
@@ -542,6 +562,12 @@ export const CancelTicketParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const cancelTicketResponseQueuePositionMin = 0;
+
+export const cancelTicketResponsePeopleAheadMin = 0;
+
+
+
 export const CancelTicketResponse = zod.object({
   "id": zod.string(),
   "number": zod.number().int(),
@@ -550,9 +576,17 @@ export const CancelTicketResponse = zod.object({
   "barber": zod.string(),
   "service": zod.string(),
   "status": zod.string(),
+  "queuePosition": zod.number().int().min(cancelTicketResponseQueuePositionMin),
+  "peopleAhead": zod.number().int().min(cancelTicketResponsePeopleAheadMin),
   "reminderSent": zod.boolean(),
   "createdAt": zod.coerce.date()
 })
+
+
+export const advanceQueueResponseQueuePositionMin = 0;
+
+export const advanceQueueResponsePeopleAheadMin = 0;
+
 
 
 export const AdvanceQueueResponse = zod.object({
@@ -563,6 +597,8 @@ export const AdvanceQueueResponse = zod.object({
   "barber": zod.string(),
   "service": zod.string(),
   "status": zod.string(),
+  "queuePosition": zod.number().int().min(advanceQueueResponseQueuePositionMin),
+  "peopleAhead": zod.number().int().min(advanceQueueResponsePeopleAheadMin),
   "reminderSent": zod.boolean(),
   "createdAt": zod.coerce.date()
 })
@@ -575,6 +611,12 @@ export const AddWalkInBody = zod.object({
   "service": zod.string().optional()
 })
 
+export const addWalkInResponseQueuePositionMin = 0;
+
+export const addWalkInResponsePeopleAheadMin = 0;
+
+
+
 export const AddWalkInResponse = zod.object({
   "id": zod.string(),
   "number": zod.number().int(),
@@ -583,6 +625,8 @@ export const AddWalkInResponse = zod.object({
   "barber": zod.string(),
   "service": zod.string(),
   "status": zod.string(),
+  "queuePosition": zod.number().int().min(addWalkInResponseQueuePositionMin),
+  "peopleAhead": zod.number().int().min(addWalkInResponsePeopleAheadMin),
   "reminderSent": zod.boolean(),
   "createdAt": zod.coerce.date()
 })

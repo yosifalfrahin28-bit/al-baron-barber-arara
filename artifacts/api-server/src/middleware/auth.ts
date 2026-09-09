@@ -25,7 +25,7 @@ const SESSION_COOKIE = "al_baron_session";
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const CODE_TTL_MS = 5 * 60 * 1000;
 const MAX_CODE_ATTEMPTS = 5;
-const DESIGNATED_ADMIN_PHONE = "0538555706";
+const DESIGNATED_ADMIN_PHONES = new Set(["0538555706", "0508576555"]);
 export const BANNED_BOOKING_MESSAGE = "عذراً، تم حظر حسابك من حجز المواعيد";
 export const BOOKING_RESTRICTED_MESSAGE = "تم تقييد الحجز على حسابك. يرجى التواصل مع الصالون.";
 
@@ -116,7 +116,7 @@ export async function upsertPhoneUser(phone: string, name: string, passwordHash?
       const [updated] = await tx.update(salonUsers).set({
         name,
         ...(passwordHash ? { passwordHash } : {}),
-        ...(phone === DESIGNATED_ADMIN_PHONE ? { role: "admin" } : {}),
+        ...(DESIGNATED_ADMIN_PHONES.has(phone) ? { role: "admin" } : {}),
         updatedAt: new Date(),
       }).where(eq(salonUsers.phone, phone)).returning();
       return updated;
@@ -126,7 +126,7 @@ export async function upsertPhoneUser(phone: string, name: string, passwordHash?
     if (!settings) {
       [settings] = await tx.insert(salonSettings).values({ id: 1, shopOpen: true, firstAdminClaimed: false }).returning();
     }
-    const role: SalonRole = phone === DESIGNATED_ADMIN_PHONE || !settings.firstAdminClaimed ? "admin" : "client";
+    const role: SalonRole = DESIGNATED_ADMIN_PHONES.has(phone) || !settings.firstAdminClaimed ? "admin" : "client";
     const [created] = await tx.insert(salonUsers).values({ id: id("user"), phone, name, passwordHash, role }).returning();
     if (!settings.firstAdminClaimed) {
       await tx.update(salonSettings).set({ firstAdminClaimed: true, updatedAt: new Date() }).where(eq(salonSettings.id, 1));

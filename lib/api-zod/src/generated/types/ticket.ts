@@ -14,6 +14,10 @@ export interface Ticket {
   barber: string;
   service: string;
   status: string;
+  /** @minimum 0 */
+  queuePosition: number;
+  /** @minimum 0 */
+  peopleAhead: number;
   reminderSent: boolean;
   createdAt: Date;
 }

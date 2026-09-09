@@ -893,7 +893,7 @@ components:
         service: { type: string }
     Ticket:
       type: object
-      required: [id, number, name, phone, barber, service, status, reminderSent, createdAt]
+      required: [id, number, name, phone, barber, service, status, queuePosition, peopleAhead, reminderSent, createdAt]
       properties:
         id: { type: string }
         number: { type: integer }
@@ -902,6 +902,8 @@ components:
         barber: { type: string }
         service: { type: string }
         status: { type: string }
+        queuePosition: { type: integer, minimum: 0 }
+        peopleAhead: { type: integer, minimum: 0 }
         reminderSent: { type: boolean }
         createdAt: { type: string, format: date-time }
     AppointmentInput:

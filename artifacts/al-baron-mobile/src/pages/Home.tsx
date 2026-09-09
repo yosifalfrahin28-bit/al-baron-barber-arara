@@ -14,7 +14,7 @@ export default function Home() {
   const [, setLocation] = useLocation();
   const { profile, activeTicket, waitingTickets, services, products, shopInfo, shopOpen, lastReminderAt, setSelectedStyle } = useSalon();
   
-  const peopleAhead = activeTicket ? waitingTickets.filter((ticket) => ticket.number < activeTicket.number).length : 0;
+  const peopleAhead = activeTicket?.peopleAhead ?? (activeTicket ? waitingTickets.filter((ticket) => ticket.number < activeTicket.number).length : 0);
   const wait = Math.max(10, peopleAhead * 10);
   
   const openDirections = () => {
@@ -73,10 +73,10 @@ export default function Home() {
             
             <div className="w-24 h-24 rounded-full border-2 border-primary flex flex-col items-center justify-center">
               <div className="text-3xl font-bold text-foreground">
-                {activeTicket.status === 'serving' ? 'الآن' : `${peopleAhead}`}
+                {activeTicket.status === 'serving' ? 'الآن' : `${activeTicket.queuePosition ?? peopleAhead + 1}`}
               </div>
               {activeTicket.status !== 'serving' && (
-                <div className="text-xs mt-1 text-muted-foreground">قبلك</div>
+                <div className="text-xs mt-1 text-muted-foreground">موقعك بالدور</div>
               )}
             </div>
           </div>

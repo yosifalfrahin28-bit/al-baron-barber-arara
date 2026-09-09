@@ -151,7 +151,7 @@ function mapShopInfo(info: typeof salonShopInfo.$inferSelect) {
   };
 }
 
-function mapTicket(ticket: typeof salonTickets.$inferSelect) {
+function mapTicket(ticket: typeof salonTickets.$inferSelect, queuePosition = 0, peopleAhead = 0) {
   return {
     id: ticket.id,
     number: ticket.number,
@@ -161,6 +161,8 @@ function mapTicket(ticket: typeof salonTickets.$inferSelect) {
     service: ticket.service,
     ageCategory: ticket.ageCategory,
     status: ticket.status,
+    queuePosition,
+    peopleAhead,
     reminderSent: ticket.reminderSent,
     createdAt: ticket.createdAt.toISOString(),
   };
@@ -239,8 +241,8 @@ router.get("/salon/state", async (_req, res, next) => {
       ageCategories: ageCategories.map(mapAgeCategory),
       products: products.map(mapProduct),
       shopInfo: shopInfo ? mapShopInfo(shopInfo) : mapShopInfo({ id: 1, shopName: "صالون البارون", phone: "", whatsapp: "", address: "", mapsUrl: "", instagramUrl: "", openingHours: "", updatedAt: new Date() }),
-      currentTicket: current ? mapTicket(current) : null,
-      waitingTickets: tickets.map(mapTicket),
+      currentTicket: current ? mapTicket(current, 0, 0) : null,
+      waitingTickets: tickets.map((ticket, index) => mapTicket(ticket, index + 1, index)),
       appointments: appointments.map(mapAppointment),
       schedule: (await db.select().from(salonScheduleSlots).orderBy(asc(salonScheduleSlots.dayOfWeek), asc(salonScheduleSlots.time))).map(mapScheduleSlot),
     });
@@ -821,7 +823,7 @@ router.post("/queue/advance", requireAuth, requireAdmin, async (_req, res, next)
       if (waiting[0]) await tx.update(salonTickets).set({ status: "serving", updatedAt: new Date() }).where(eq(salonTickets.id, waiting[0].id));
     });
     const next = waiting[0] ? { ...waiting[0], status: "serving" } : null;
-    res.json(next ? mapTicket(next) : { id: "", number: 0, name: "", phone: "", barber: "", service: "", ageCategory: "بالغون", status: "completed", reminderSent: false, createdAt: new Date().toISOString() });
+    res.json(next ? mapTicket(next, 0, 0) : { id: "", number: 0, name: "", phone: "", barber: "", service: "", ageCategory: "بالغون", status: "completed", queuePosition: 0, peopleAhead: 0, reminderSent: false, createdAt: new Date().toISOString() });
   } catch (error) {
     return next(error);
   }

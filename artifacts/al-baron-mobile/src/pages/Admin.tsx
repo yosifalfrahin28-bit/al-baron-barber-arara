@@ -719,7 +719,10 @@ export default function Admin() {
                   "w-12 h-12 rounded-[14px] flex items-center justify-center shrink-0",
                   index === 0 ? "bg-primary/15 text-primary" : "bg-secondary text-foreground"
                 )}>
-                  <span className="text-base font-bold">#{ticket.number}</span>
+                  <span className="text-center text-xs font-bold leading-5">
+                    <span className="block text-base">#{ticket.queuePosition ?? index + 1}</span>
+                    <span className="block text-[9px] opacity-70">موقع الدور</span>
+                  </span>
                 </div>
                 <div className="flex-1 text-right">
                   <div className="text-sm font-bold text-foreground">{ticket.name}</div>
