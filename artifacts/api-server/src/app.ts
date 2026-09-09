@@ -13,10 +13,23 @@ const configuredFrontendOrigins = (process.env.FRONTEND_ORIGIN ?? "")
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+function isAlBaronVercelPreview(origin: string) {
+  try {
+    const url = new URL(origin);
+    return (
+      url.protocol === "https:" &&
+      url.hostname.startsWith("al-baron-barber-arara-al-baron-mobile-5zq2-") &&
+      url.hostname.endsWith(".vercel.app")
+    );
+  } catch {
+    return false;
+  }
+}
+
 function corsOrigin(origin: string | undefined, callback: (error: Error | null, allowed?: boolean) => void) {
   if (!origin) return callback(null, true);
   if (configuredFrontendOrigins.length > 0) {
-    return callback(null, configuredFrontendOrigins.includes(origin));
+    return callback(null, configuredFrontendOrigins.includes(origin) || isAlBaronVercelPreview(origin));
   }
   return callback(null, process.env.NODE_ENV !== "production");
 }
