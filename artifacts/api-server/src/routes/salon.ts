@@ -1,5 +1,5 @@
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
-import { and, asc, desc, eq, max } from "drizzle-orm";
+import { and, asc, desc, eq, max, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   salonAppointments,
@@ -176,6 +176,7 @@ function mapAppointment(appointment: typeof salonAppointments.$inferSelect) {
     barber: appointment.barber,
     service: appointment.service,
     ageCategory: appointment.ageCategory,
+    guestCount: appointment.guestCount,
     status: appointment.status,
     confirmationSent: appointment.confirmationSent,
     reminderSent: appointment.reminderSent,
@@ -184,6 +185,30 @@ function mapAppointment(appointment: typeof salonAppointments.$inferSelect) {
     reviewRequestSent: appointment.reviewRequestSent,
     createdAt: appointment.createdAt.toISOString(),
   };
+}
+
+function parseTimeMinutes(value: string) {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value);
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function appointmentDurationMinutes(
+  serviceName: string,
+  guestCount: number,
+  serviceDurations: Map<string, number>,
+) {
+  const baseDuration = serviceDurations.get(serviceName) ?? 30;
+  return baseDuration + Math.max(0, guestCount - 1) * 20;
+}
+
+class AppointmentTimeUnavailableError extends Error {
+  readonly statusCode = 409;
+  readonly code = "APPOINTMENT_TIME_UNAVAILABLE";
+
+  constructor() {
+    super("هذا الوقت محجوز أو يتعارض مع موعد آخر، اختر وقتاً مختلفاً");
+  }
 }
 
 function mapScheduleSlot(slot: typeof salonScheduleSlots.$inferSelect) {
@@ -782,7 +807,51 @@ router.post("/appointments", requireAuth, requireBookingAccess, async (req, res,
   try {
     const phone = req.salonUser!.phone;
     const name = req.salonUser!.name;
-    const [appointment] = await db.insert(salonAppointments).values({ id: id("appointment"), userId: req.salonUser!.id, date: text(req.body?.date, "اليوم"), time: text(req.body?.time, "18:30"), name, phone, barber: text(req.body?.barber, "أول حلاق متاح"), service: text(req.body?.service, "قص شعر مودرن"), ageCategory: text(req.body?.ageCategory, "بالغون"), status: "confirmed" }).returning();
+    const date = text(req.body?.date, "اليوم");
+    const time = text(req.body?.time, "18:30");
+    const barber = text(req.body?.barber, "أول حلاق متاح");
+    const service = text(req.body?.service, "قص شعر مودرن");
+    const ageCategory = text(req.body?.ageCategory, "بالغون");
+    const guestCount = Math.min(8, Math.max(1, number(req.body?.guestCount, 1)));
+    const requestedStart = parseTimeMinutes(time);
+    if (requestedStart === null || date === "اليوم") {
+      return res.status(400).json({ message: "تاريخ ووقت الحجز غير صالحين" });
+    }
+
+    const [appointment] = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`salon-appointments:${date}`}))`);
+      const [services, existingAppointments] = await Promise.all([
+        tx.select({ name: salonServices.name, duration: salonServices.duration }).from(salonServices),
+        tx.select().from(salonAppointments).where(eq(salonAppointments.date, date)),
+      ]);
+      const serviceDurations = new Map(services.map((item) => [item.name, item.duration]));
+      const requestedEnd = requestedStart + appointmentDurationMinutes(service, guestCount, serviceDurations);
+      const overlaps = existingAppointments.some((existing) => {
+        if (existing.status === "cancelled") return false;
+        const existingStart = parseTimeMinutes(existing.time);
+        if (existingStart === null) return false;
+        const existingEnd = existingStart + appointmentDurationMinutes(existing.service, existing.guestCount, serviceDurations);
+        return requestedStart < existingEnd && existingStart < requestedEnd;
+      });
+      if (overlaps) throw new AppointmentTimeUnavailableError();
+
+      return tx.insert(salonAppointments).values({
+        id: id("appointment"),
+        userId: req.salonUser!.id,
+        date,
+        time,
+        name,
+        phone,
+        barber,
+        service,
+        ageCategory,
+        guestCount,
+        status: "confirmed",
+      }).returning();
+    }).catch((error) => {
+      if (error instanceof AppointmentTimeUnavailableError) throw error;
+      throw error;
+    });
     await db.update(salonUsers).set({ lastRebookingReminderAt: null, updatedAt: new Date() }).where(eq(salonUsers.id, req.salonUser!.id));
     let confirmationSent = false;
     const confirmationTemplate = await getMessageTemplate("booking_confirmation");
@@ -806,6 +875,9 @@ router.post("/appointments", requireAuth, requireBookingAccess, async (req, res,
     const [savedAppointment] = await db.select().from(salonAppointments).where(eq(salonAppointments.id, appointment.id)).limit(1);
     res.status(201).json(mapAppointment(savedAppointment ?? { ...appointment, confirmationSent }));
   } catch (error) {
+    if (error instanceof AppointmentTimeUnavailableError) {
+      return res.status(error.statusCode).json({ code: error.code, message: error.message });
+    }
     return next(error);
   }
 });

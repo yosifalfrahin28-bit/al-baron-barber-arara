@@ -19,6 +19,7 @@ export const HealthCheckResponse = zod.object({
 /**
  * @summary Read the live salon state
  */
+
 export const getSalonStateResponseScheduleItemOneDayOfWeekMin = 0;
 export const getSalonStateResponseScheduleItemOneDayOfWeekMax = 6;
 
@@ -68,6 +69,7 @@ export const GetSalonStateResponse = zod.object({
   "time": zod.string(),
   "barber": zod.string(),
   "service": zod.string(),
+  "guestCount": zod.number().int().min(1),
   "status": zod.string(),
   "confirmationSent": zod.boolean(),
   "reminderSent": zod.boolean(),
@@ -227,6 +229,9 @@ export const GetBroadcastRecipientCountResponse = zod.object({
 /**
  * @summary List all appointments for the admin dashboard
  */
+
+
+
 export const ListAdminAppointmentsResponseItem = zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -235,6 +240,7 @@ export const ListAdminAppointmentsResponseItem = zod.object({
   "time": zod.string(),
   "barber": zod.string(),
   "service": zod.string(),
+  "guestCount": zod.number().int().min(1),
   "status": zod.string(),
   "confirmationSent": zod.boolean(),
   "reminderSent": zod.boolean(),
@@ -560,6 +566,9 @@ export const ListAppointmentsQueryParams = zod.object({
   "phone": zod.coerce.string().optional()
 })
 
+
+
+
 export const ListAppointmentsResponseItem = zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -568,6 +577,7 @@ export const ListAppointmentsResponseItem = zod.object({
   "time": zod.string(),
   "barber": zod.string(),
   "service": zod.string(),
+  "guestCount": zod.number().int().min(1),
   "status": zod.string(),
   "confirmationSent": zod.boolean(),
   "reminderSent": zod.boolean(),
@@ -579,12 +589,21 @@ export const ListAppointmentsResponseItem = zod.object({
 export const ListAppointmentsResponse = zod.array(ListAppointmentsResponseItem)
 
 
+export const createAppointmentBodyGuestCountDefault = 1;
+export const createAppointmentBodyGuestCountMax = 8;
+
+
+
 export const CreateAppointmentBody = zod.object({
   "date": zod.string(),
   "time": zod.string(),
   "barber": zod.string(),
-  "service": zod.string()
+  "service": zod.string(),
+  "guestCount": zod.number().int().min(1).max(createAppointmentBodyGuestCountMax).default(createAppointmentBodyGuestCountDefault)
 })
+
+
+
 
 export const CreateAppointmentResponse = zod.object({
   "id": zod.string(),
@@ -594,6 +613,7 @@ export const CreateAppointmentResponse = zod.object({
   "time": zod.string(),
   "barber": zod.string(),
   "service": zod.string(),
+  "guestCount": zod.number().int().min(1),
   "status": zod.string(),
   "confirmationSent": zod.boolean(),
   "reminderSent": zod.boolean(),
@@ -651,6 +671,9 @@ export const CancelAppointmentBody = zod.object({
   "reason": zod.string().max(cancelAppointmentBodyReasonMax).optional()
 })
 
+
+
+
 export const CancelAppointmentResponse = zod.object({
   "appointment": zod.object({
   "id": zod.string(),
@@ -660,6 +683,7 @@ export const CancelAppointmentResponse = zod.object({
   "time": zod.string(),
   "barber": zod.string(),
   "service": zod.string(),
+  "guestCount": zod.number().int().min(1),
   "status": zod.string(),
   "confirmationSent": zod.boolean(),
   "reminderSent": zod.boolean(),

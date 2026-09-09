@@ -166,6 +166,7 @@ export const salonAppointments = pgTable("salon_appointments", {
   barber: text("barber").notNull(),
   service: text("service").notNull(),
   ageCategory: text("age_category").notNull().default("بالغ"),
+  guestCount: integer("guest_count").notNull().default(1),
   status: text("status").notNull().default("confirmed"),
   confirmationSent: boolean("confirmation_sent").notNull().default(false),
   reminderSent: boolean("reminder_sent").notNull().default(false),

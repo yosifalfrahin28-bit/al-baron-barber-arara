@@ -866,9 +866,10 @@ components:
         time: { type: string }
         barber: { type: string }
         service: { type: string }
+        guestCount: { type: integer, minimum: 1, maximum: 8, default: 1 }
     Appointment:
       type: object
-      required: [id, name, phone, date, time, barber, service, status, confirmationSent, reminderSent, reminderOneHourSent, reminderTwentyMinuteSent, reviewRequestSent, createdAt]
+      required: [id, name, phone, date, time, barber, service, guestCount, status, confirmationSent, reminderSent, reminderOneHourSent, reminderTwentyMinuteSent, reviewRequestSent, createdAt]
       properties:
         id: { type: string }
         name: { type: string }
@@ -877,6 +878,7 @@ components:
         time: { type: string }
         barber: { type: string }
         service: { type: string }
+        guestCount: { type: integer, minimum: 1 }
         status: { type: string }
         confirmationSent: { type: boolean }
         reminderSent: { type: boolean }

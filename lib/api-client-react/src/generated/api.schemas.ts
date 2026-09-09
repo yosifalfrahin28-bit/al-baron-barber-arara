@@ -217,6 +217,11 @@ export interface AppointmentInput {
   time: string;
   barber: string;
   service: string;
+  /**
+     * @minimum 1
+     * @maximum 8
+     */
+  guestCount?: number;
 }
 
 export interface Appointment {
@@ -227,6 +232,8 @@ export interface Appointment {
   time: string;
   barber: string;
   service: string;
+  /** @minimum 1 */
+  guestCount: number;
   status: string;
   confirmationSent: boolean;
   reminderSent: boolean;
