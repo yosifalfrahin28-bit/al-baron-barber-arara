@@ -1,0 +1,965 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.2.0
+  description: Shared Al-Baron Barber Shop API
+servers:
+  - url: /api
+tags:
+  - name: health
+  - name: salon
+  - name: auth
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /salon/state:
+    get:
+      operationId: getSalonState
+      tags: [salon]
+      summary: Read the live salon state
+      responses:
+        "200":
+          description: Live queue, appointments, services, and settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SalonState"
+  /auth/phone/profile:
+    post:
+      operationId: upsertPhoneProfile
+      tags: [auth]
+      summary: Create or update a phone profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileInput"
+      responses:
+        "200":
+          description: Profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+  /auth/session:
+    get:
+      operationId: getAuthSession
+      tags: [auth]
+      summary: Read the current phone-authenticated session
+      responses:
+        "200":
+          description: Authenticated phone user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+        "401":
+          description: Not authenticated
+  /auth/phone/request-code:
+    post:
+      operationId: requestPhoneCode
+      tags: [auth]
+      summary: Send a phone verification code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PhoneAuthRequest"
+      responses:
+        "202":
+          description: Verification code sent
+  /auth/send-otp:
+    post:
+      operationId: sendOtp
+      tags: [auth]
+      summary: Send an SMS OTP using a flexible Israeli phone format
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PhoneAuthRequest"
+      responses:
+        "202":
+          description: Verification code sent
+        "400":
+          description: Invalid phone number
+        "404":
+          description: Phone is not registered for sign-in
+  /auth/password-login:
+    post:
+      operationId: passwordLogin
+      tags: [auth]
+      summary: Sign in with phone and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordLoginInput"
+      responses:
+        "202":
+          description: Password accepted; a second-factor phone code was sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OtpDelivery"
+        "401":
+          description: Invalid phone or password
+  /auth/phone/verify-code:
+    post:
+      operationId: verifyPhoneCode
+      tags: [auth]
+      summary: Verify a phone code and create a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PhoneCodeInput"
+      responses:
+        "200":
+          description: Authenticated phone user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+  /auth/sign-out:
+    post:
+      operationId: signOut
+      tags: [auth]
+      summary: End the current phone-authenticated session
+      responses:
+        "204":
+          description: Signed out
+  /auth/phone/profile/{phone}:
+    get:
+      operationId: getPhoneProfile
+      tags: [auth]
+      parameters:
+        - in: path
+          name: phone
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+  /admin/broadcast-whatsapp/recipients:
+    get:
+      operationId: getBroadcastRecipientCount
+      tags: [auth]
+      summary: Count registered customer phone numbers for a broadcast
+      responses:
+        "200":
+          description: Recipient count
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BroadcastRecipientCount"
+  /admin/appointments:
+    get:
+      operationId: listAdminAppointments
+      tags: [auth]
+      summary: List all appointments for the admin dashboard
+      responses:
+        "200":
+          description: All appointments ordered by newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Appointment"
+  /admin/broadcast-whatsapp:
+    post:
+      operationId: createWhatsappBroadcast
+      tags: [auth]
+      summary: Send a WhatsApp broadcast to all customers and retain fallback links
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BroadcastInput"
+      responses:
+        "201":
+          description: Broadcast history and recipient links
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BroadcastResult"
+  /admin/broadcast-sms:
+    post:
+      operationId: broadcastSms
+      tags: [auth]
+      summary: Send a WhatsApp broadcast through the connected server session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SmsBroadcastInput"
+      responses:
+        "200":
+          description: WhatsApp delivery result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SmsBroadcastResult"
+  /admin/customers:
+    get:
+      operationId: listAdminCustomers
+      tags: [auth]
+      summary: List customer accounts for the admin dashboard
+      responses:
+        "200":
+          description: Customer accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Customer"
+  /admin/customers/{id}/ban:
+    patch:
+      operationId: setCustomerBan
+      tags: [auth]
+      summary: Ban or unban a customer account
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomerBanInput"
+      responses:
+        "200":
+          description: Updated customer account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+  /admin/customers/{id}/restrictions:
+    patch:
+      operationId: updateCustomerRestrictions
+      tags: [auth]
+      summary: Restrict customer booking and update an account notice
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomerRestrictionsInput"
+      responses:
+        "200":
+          description: Updated customer account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+  /admin/customers/{id}/password:
+    post:
+      operationId: resetCustomerPassword
+      tags: [auth]
+      summary: Reset a customer password
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomerPasswordResetInput"
+      responses:
+        "204":
+          description: Customer password reset
+  /admin/customers/{id}:
+    delete:
+      operationId: deleteCustomer
+      tags: [auth]
+      summary: Delete a customer account
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Customer deleted
+  /admin/message-templates:
+    get:
+      operationId: listMessageTemplates
+      tags: [auth]
+      summary: List editable automated WhatsApp message templates
+      responses:
+        "200":
+          description: Message templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MessageTemplate"
+  /admin/message-templates/{key}:
+    patch:
+      operationId: updateMessageTemplate
+      tags: [auth]
+      summary: Update an automated WhatsApp message template
+      parameters:
+        - in: path
+          name: key
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageTemplateInput"
+      responses:
+        "200":
+          description: Updated message template
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageTemplate"
+  /admin/reviews:
+    get:
+      operationId: listAdminReviews
+      tags: [auth]
+      summary: List customer reviews and suggestions
+      responses:
+        "200":
+          description: Customer reviews
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Review"
+  /admin/reviews/{id}/status:
+    patch:
+      operationId: updateReviewStatus
+      tags: [auth]
+      summary: Update the review workflow status
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewStatusInput"
+      responses:
+        "200":
+          description: Updated review
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Review"
+  /tickets:
+    post:
+      operationId: createTicket
+      tags: [salon]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TicketInput"
+      responses:
+        "201":
+          description: Created ticket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ticket"
+  /tickets/{id}/cancel:
+    post:
+      operationId: cancelTicket
+      tags: [salon]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Updated ticket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ticket"
+  /queue/advance:
+    post:
+      operationId: advanceQueue
+      tags: [salon]
+      responses:
+        "200":
+          description: Current ticket after advancement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ticket"
+  /walk-ins:
+    post:
+      operationId: addWalkIn
+      tags: [salon]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WalkInInput"
+      responses:
+        "201":
+          description: Added ticket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ticket"
+  /tickets/{id}/summon:
+    post:
+      operationId: summonTicket
+      tags: [salon]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Reminder result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SummonResult"
+  /appointments:
+    get:
+      operationId: listAppointments
+      tags: [salon]
+      parameters:
+        - in: query
+          name: phone
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Appointments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Appointment"
+    post:
+      operationId: createAppointment
+      tags: [salon]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppointmentInput"
+      responses:
+        "201":
+          description: Created appointment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+  /reviews:
+    post:
+      operationId: createReview
+      tags: [salon]
+      summary: Submit a customer rating and feedback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewInput"
+      responses:
+        "201":
+          description: Created review
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Review"
+  /appointments/{id}/cancel:
+    post:
+      operationId: cancelAppointment
+      tags: [salon]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppointmentCancellationInput"
+      responses:
+        "200":
+          description: Cancelled appointment and WhatsApp link
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentCancellationResult"
+  /services:
+    get:
+      operationId: listServices
+      tags: [salon]
+      responses:
+        "200":
+          description: Service catalog
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Service"
+    post:
+      operationId: createService
+      tags: [salon]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServiceInput"
+      responses:
+        "201":
+          description: Created service
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Service"
+  /services/{id}:
+    patch:
+      operationId: updateService
+      tags: [salon]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServiceInput"
+      responses:
+        "200":
+          description: Updated service
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Service"
+    delete:
+      operationId: hideService
+      tags: [salon]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Service hidden
+  /schedule-slots:
+    post:
+      operationId: createScheduleSlot
+      tags: [salon]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduleSlotInput"
+      responses:
+        "201":
+          description: Created schedule slot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleSlot"
+  /schedule-slots/{id}:
+    patch:
+      operationId: updateScheduleSlot
+      tags: [salon]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduleSlotInput"
+      responses:
+        "200":
+          description: Updated schedule slot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleSlot"
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [salon]
+      summary: Read current salon settings
+      responses:
+        "200":
+          description: Current settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+    patch:
+      operationId: updateSettings
+      tags: [salon]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [shopOpen]
+              properties:
+                shopOpen: { type: boolean }
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string }
+    PhoneAuthRequest:
+      type: object
+      required: [phone, mode]
+      properties:
+        phone: { type: string }
+        mode: { type: string, enum: [sign-in, sign-up] }
+        name: { type: string }
+        password: { type: string, minLength: 8 }
+    PasswordLoginInput:
+      type: object
+      required: [phone, password]
+      properties:
+        phone: { type: string }
+        password: { type: string, minLength: 8 }
+    OtpDelivery:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }
+        devOtp: { type: string }
+    MessageTemplate:
+      type: object
+      required: [key, label, body]
+      properties:
+        key: { type: string }
+        label: { type: string }
+        body: { type: string }
+    MessageTemplateInput:
+      type: object
+      required: [body]
+      properties:
+        body: { type: string, minLength: 1, maxLength: 2000 }
+    Review:
+      type: object
+      required: [id, name, rating, feedback, suggestion, status, createdAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        phone: { type: string }
+        appointmentId: { type: [string, "null"] }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        feedback: { type: string }
+        suggestion: { type: string }
+        status: { type: string, enum: [new, reviewed, archived] }
+        createdAt: { type: string, format: date-time }
+    ReviewInput:
+      type: object
+      required: [rating]
+      properties:
+        appointmentId: { type: string }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        feedback: { type: string, maxLength: 2000 }
+        suggestion: { type: string, maxLength: 2000 }
+    ReviewStatusInput:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [new, reviewed, archived] }
+    PhoneCodeInput:
+      type: object
+      required: [phone, code]
+      properties:
+        phone: { type: string }
+        code: { type: string, minLength: 4, maxLength: 6 }
+    BroadcastRecipientCount:
+      type: object
+      required: [recipientCount]
+      properties:
+        recipientCount: { type: integer }
+    BroadcastInput:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string, maxLength: 2000 }
+    BroadcastLink:
+      type: object
+      required: [name, phone, url]
+      properties:
+        name: { type: string }
+        phone: { type: string }
+        url: { type: string, format: uri }
+    BroadcastResult:
+      type: object
+      required: [id, status, recipientCount, links, createdAt]
+      properties:
+        id: { type: string }
+        status: { type: string }
+        recipientCount: { type: integer }
+        links:
+          type: array
+          items:
+            $ref: "#/components/schemas/BroadcastLink"
+        createdAt: { type: string, format: date-time }
+    SmsBroadcastInput:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string, maxLength: 1600 }
+    SmsBroadcastResult:
+      type: object
+      required: [enabled, recipientCount, sentCount, failedCount]
+      properties:
+        enabled: { type: boolean }
+        recipientCount: { type: integer }
+        sentCount: { type: integer }
+        failedCount: { type: integer }
+    ProfileInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        note: { type: string }
+    Profile:
+      allOf:
+        - $ref: "#/components/schemas/ProfileInput"
+        - type: object
+          required: [id, role]
+          properties:
+            id: { type: string }
+            role: { type: string }
+            bookingRestricted: { type: boolean }
+            accountNotice: { type: string }
+    Customer:
+      type: object
+      required: [id, phone, name, note, role, banned, banReason, createdAt]
+      properties:
+        id: { type: string }
+        phone: { type: string }
+        name: { type: string }
+        note: { type: string }
+        role: { type: string }
+        banned: { type: boolean }
+        banReason: { type: string }
+        bookingRestricted: { type: boolean }
+        accountNotice: { type: string }
+        createdAt: { type: string, format: date-time }
+    CustomerBanInput:
+      type: object
+      required: [banned]
+      properties:
+        banned: { type: boolean }
+        reason: { type: string, maxLength: 500 }
+    CustomerRestrictionsInput:
+      type: object
+      required: [bookingRestricted]
+      properties:
+        bookingRestricted: { type: boolean }
+        accountNotice: { type: string, maxLength: 500 }
+    CustomerPasswordResetInput:
+      type: object
+      required: [password]
+      properties:
+        password: { type: string, minLength: 8 }
+    TicketInput:
+      type: object
+      required: [barber, service]
+      properties:
+        barber: { type: string }
+        service: { type: string }
+    WalkInInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        phone: { type: string }
+        barber: { type: string }
+        service: { type: string }
+    Ticket:
+      type: object
+      required: [id, number, name, phone, barber, service, status, reminderSent, createdAt]
+      properties:
+        id: { type: string }
+        number: { type: integer }
+        name: { type: string }
+        phone: { type: string }
+        barber: { type: string }
+        service: { type: string }
+        status: { type: string }
+        reminderSent: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    AppointmentInput:
+      type: object
+      required: [date, time, barber, service]
+      properties:
+        date: { type: string }
+        time: { type: string }
+        barber: { type: string }
+        service: { type: string }
+    Appointment:
+      type: object
+      required: [id, name, phone, date, time, barber, service, status, confirmationSent, reminderSent, reminderOneHourSent, reminderTwentyMinuteSent, reviewRequestSent, createdAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        phone: { type: string }
+        date: { type: string }
+        time: { type: string }
+        barber: { type: string }
+        service: { type: string }
+        status: { type: string }
+        confirmationSent: { type: boolean }
+        reminderSent: { type: boolean }
+        reminderOneHourSent: { type: boolean }
+        reminderTwentyMinuteSent: { type: boolean }
+        reviewRequestSent: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    AppointmentCancellationInput:
+      type: object
+      properties:
+        reason: { type: string, maxLength: 500 }
+    AppointmentCancellationResult:
+      type: object
+      required: [appointment, whatsappUrl]
+      properties:
+        appointment:
+          $ref: "#/components/schemas/Appointment"
+        whatsappUrl: { type: string, format: uri }
+    ScheduleSlotInput:
+      type: object
+      required: [dayOfWeek, time, active]
+      properties:
+        dayOfWeek: { type: integer, minimum: 0, maximum: 6 }
+        time: { type: string, pattern: "^[0-2][0-9]:[0-5][0-9]$" }
+        active: { type: boolean }
+    ScheduleSlot:
+      allOf:
+        - $ref: "#/components/schemas/ScheduleSlotInput"
+        - type: object
+          required: [id]
+          properties:
+            id: { type: string }
+    ServiceInput:
+      type: object
+      required: [name, description, price, duration, visible]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        price: { type: integer }
+        duration: { type: integer }
+        visible: { type: boolean }
+    Service:
+      allOf:
+        - $ref: "#/components/schemas/ServiceInput"
+        - type: object
+          required: [id]
+          properties:
+            id: { type: string }
+    Settings:
+      type: object
+      required: [shopOpen]
+      properties:
+        shopOpen: { type: boolean }
+    SummonResult:
+      type: object
+      required: [sent, providerConnected, whatsappUrl]
+      properties:
+        sent: { type: boolean }
+        providerConnected: { type: boolean }
+        whatsappUrl: { type: string }
+    SalonState:
+      type: object
+      required: [settings, services, currentTicket, waitingTickets, appointments, schedule]
+      properties:
+        settings:
+          $ref: "#/components/schemas/Settings"
+        services:
+          type: array
+          items:
+            $ref: "#/components/schemas/Service"
+        currentTicket:
+          oneOf:
+            - $ref: "#/components/schemas/Ticket"
+            - type: "null"
+        waitingTickets:
+          type: array
+          items:
+            $ref: "#/components/schemas/Ticket"
+        appointments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Appointment"
+        schedule:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScheduleSlot"

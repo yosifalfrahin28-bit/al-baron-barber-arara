@@ -1,0 +1,10 @@
+- [Orval API Zod exports](orval-api-zod.md) — generated runtime schemas and interfaces can collide; keep conflicting interface exports explicit and type-only.
+- [Workspace package installation](package-install-monorepo.md) — add artifact dependencies through the owning pnpm workspace filter, not the monorepo root.
+- [Baileys runtime dependencies](baileys-runtime-dependencies.md) — externalized Baileys imports must be direct API-server dependencies so bundled production starts successfully.
+- [Service catalog deletion](service-catalog-seeding.md) — service deletion is permanent and seed data is inserted only once, so admin catalog edits survive restarts.
+- [Ban-column migration](ban-column-migration.md) — preserve existing ban data when introducing is_banned; remove the compatibility column only through publish-time migration.
+- [Browser session cookies](browser-session-cookies.md) — generated browser API requests must explicitly include HTTP-only cookies for authenticated PWA mutations.
+- [API root probes](api-root-probes.md) — workflow root health checks bypass the `/api` router and need handlers on the Express app itself.
+- [API polling cache](api-polling-cache.md) — stateful dashboard polls must avoid bodyless 304 responses that the generated client treats as empty state.
+- [DB project references](db-project-reference-build.md) — rebuild the database declaration project before dependent TypeScript checks after schema edits.
+- [Embedded preview auth](embedded-preview-auth.md) — retain a session fallback for embedded Safari previews when cookies are not returned to immediate auth checks.

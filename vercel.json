@@ -1,0 +1,12 @@
+{
+  "buildCommand": "pnpm --filter @workspace/al-baron-mobile run build",
+  "outputDirectory": "artifacts/al-baron-mobile/dist",
+  "installCommand": "corepack enable && pnpm install --frozen-lockfile",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/((?!assets/|api/).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

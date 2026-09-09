@@ -1,0 +1,24 @@
+kind = "mobile"
+previewPath = "/"
+title = "Al-Baron Barber Shop"
+description = "A luxury Arabic RTL mobile experience for Al-Baron Barber Shop with live queue booking, appointments, client accounts, barber administration, and TV waiting display mode."
+version = "1.0.0"
+id = "artifacts/al-baron-mobile"
+router = "expo-domain"
+
+[[services]]
+name = "expo"
+ensurePreviewReachable = "/status"
+paths = [ "/" ]
+localPort = 21493
+
+[services.development]
+run = "pnpm --filter @workspace/al-baron-mobile run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/al-baron-mobile", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/al-baron-mobile", "run", "serve" ]
+
+[services.env]
+PORT = "21493"
+BASE_PATH = "/"
