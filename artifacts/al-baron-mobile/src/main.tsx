@@ -256,6 +256,15 @@ function AuthScreen({ initialMode }: { initialMode: "sign-in" | "sign-up" }) {
                   {submitting ? (mode === 'sign-in' ? 'جارٍ تسجيل الدخول...' : 'جارٍ إرسال رمز التحقق...') : mode === 'sign-in' ? 'تسجيل الدخول' : 'إنشاء الحساب وإرسال الرمز'}
                 </button>
               </form>
+              {import.meta.env.VITE_WHATSAPP_SETUP_ENABLED === 'true' && (
+                <button
+                  type="button"
+                  onClick={() => setLocation('/whatsapp-setup')}
+                  className="mt-4 h-11 w-full rounded-xl border border-[#25D366]/40 bg-[#25D366]/10 text-sm font-bold text-[#9af0b7] transition-colors hover:bg-[#25D366]/20"
+                >
+                  ربط WhatsApp للإدارة
+                </button>
+              )}
             </>
           ) : (
             <div className="text-center">
