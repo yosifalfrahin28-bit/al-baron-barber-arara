@@ -16,6 +16,7 @@ import Account from "./pages/Account";
 import Admin from "./pages/Admin";
 import TvDisplay from "./pages/TvDisplay";
 import WhatsAppQr from "./pages/WhatsAppQr";
+import WhatsAppSetup from "./pages/WhatsAppSetup";
 import Reviews from "./pages/Reviews";
 import NotFound from "./pages/NotFound";
 import { Share2, X } from "lucide-react";
@@ -355,6 +356,7 @@ function Routes() {
       <Route path="/queue"><ProtectedPage><Account /></ProtectedPage></Route>
       <Route path="/account"><ProtectedPage><Account /></ProtectedPage></Route>
       <Route path="/reviews"><ProtectedPage><Reviews /></ProtectedPage></Route>
+      <Route path="/whatsapp-setup"><WhatsAppSetup /></Route>
       <Route path="/admin/qr"><ProtectedPage><WhatsAppQr /></ProtectedPage></Route>
       <Route path="/admin"><ProtectedPage><Admin /></ProtectedPage></Route>
       <Route component={NotFound} />
