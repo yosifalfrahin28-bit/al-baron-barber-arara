@@ -1,6 +1,6 @@
 {
-  "buildCommand": "pnpm --filter @workspace/al-baron-mobile run build",
-  "outputDirectory": "artifacts/al-baron-mobile/dist",
+  "buildCommand": "pnpm --filter @workspace/al-baron-mobile run build && rm -rf dist && cp -R artifacts/al-baron-mobile/dist dist",
+  "outputDirectory": "dist",
   "installCommand": "corepack enable && pnpm install --frozen-lockfile",
   "framework": "vite",
   "rewrites": [
