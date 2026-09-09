@@ -74,13 +74,14 @@ export async function sendWelcomeMessage(phone: string, name: string) {
   await sendWhatsAppMessage(phone, renderMessage(template, { name }));
 }
 
-export async function createPhoneChallenge(phone: string, name: string, passwordHash?: string) {
+export async function createPhoneChallenge(phone: string, name: string, passwordHash?: string, provider = "whatsapp") {
   await db.delete(salonAuthChallenges).where(and(eq(salonAuthChallenges.phone, phone), isNull(salonAuthChallenges.consumedAt)));
   const [challenge] = await db.insert(salonAuthChallenges).values({
     id: id("challenge"),
     phone,
     name,
     passwordHash,
+    provider,
     expiresAt: new Date(Date.now() + CODE_TTL_MS),
   }).returning();
   return challenge;

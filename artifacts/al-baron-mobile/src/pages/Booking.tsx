@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, ArrowRight, CalendarDays, CheckCircle2, ChevronLeft, Crown, Info, Lock, Plus, Users, Zap } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CalendarDays, CheckCircle2, ChevronLeft, Crown, ExternalLink, Info, Lock, Plus, Users, Zap } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { useSalon } from '@/context/SalonContext';
 import { usePhoneAuth } from '@/context/AuthContext';
@@ -17,10 +17,16 @@ const paymentMethods = [
   { id: 'cash_at_shop' as const, label: 'كاش عند الحلاق', description: 'الدفع عند الوصول' },
 ];
 
-function additionalMinutesForCategory(category: string) {
+function additionalMinutesForCategory(category: string, categories: Array<{ name: string; additionalMinutes: number }>) {
+  const configured = categories.find((item) => item.name === category)?.additionalMinutes;
+  if (configured !== undefined) return configured;
   if (category.includes('طف') || category.toLowerCase().includes('child')) return 10;
   if (category.includes('شب') || category.toLowerCase().includes('teen')) return 20;
   return 25;
+}
+
+function roundToBookingUnits(minutes: number) {
+  return Math.ceil(minutes / 20) * 20;
 }
 
 function salonDateKey(date: Date) {
@@ -63,7 +69,7 @@ function salonCalendarDay(date: Date, offset: number) {
 
 export default function Booking() {
   const [, setLocation] = useLocation();
-  const { services, ageCategories, schedule, appointments, tickets, waitingTickets, selectedStyle, setSelectedStyle, joinQueue, bookAppointment, shopOpen } = useSalon();
+  const { services, ageCategories, schedule, appointments, tickets, waitingTickets, shopInfo, selectedStyle, setSelectedStyle, joinQueue, bookAppointment, shopOpen } = useSalon();
   const { user } = usePhoneAuth();
   const [step, setStep] = useState<BookingStep>(1);
   const [mode, setMode] = useState<BookingMode>(() => new URLSearchParams(window.location.search).get('mode') === 'appointment' ? 'appointment' : 'queue');
@@ -93,10 +99,14 @@ export default function Booking() {
   const scheduledTimes = useMemo(() => schedule
     .filter((slot) => slot.dayOfWeek === selectedDay?.dayOfWeek && slot.active)
     .map((slot) => slot.time)
+    .filter((slot) => {
+      const [hours, minutes] = slot.split(':').map(Number);
+      return Number.isFinite(hours) && Number.isFinite(minutes) && minutes % 20 === 0;
+    })
     .filter((slot, index, slots) => slots.indexOf(slot) === index)
     .sort(), [schedule, selectedDay]);
-  const selectedDuration = (selectedService?.duration ?? 30)
-    + participantCategories.slice(1).reduce((total, category) => total + additionalMinutesForCategory(category), 0);
+  const selectedDuration = roundToBookingUnits((selectedService?.duration ?? 30)
+    + participantCategories.slice(1).reduce((total, category) => total + additionalMinutesForCategory(category, ageCategories), 0));
   const todayKey = salonDateKey(new Date(nowTick));
   const currentSalonMinutes = salonMinutes(new Date(nowTick));
   const availableTimes = useMemo(() => {
@@ -104,26 +114,38 @@ export default function Booking() {
       const [hours, minutes] = value.split(':').map(Number);
       return hours * 60 + minutes;
     };
+    const scheduledSet = new Set(scheduledTimes);
     return scheduledTimes.filter((candidate) => {
       const candidateStart = toMinutes(candidate);
       if (selectedDay?.date === todayKey && candidateStart <= currentSalonMinutes + 10) return false;
       const candidateEnd = candidateStart + selectedDuration;
+      const requiredUnits = selectedDuration / 20;
+      const requiredSlots = Array.from({ length: requiredUnits }, (_, index) => {
+        const minutes = candidateStart + index * 20;
+        return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+      });
+      if (requiredSlots.some((slot) => !scheduledSet.has(slot))) return false;
       return !appointments.some((appointment) => {
         if (appointment.date !== selectedDay?.date || appointment.status === 'cancelled') return false;
         const existingStart = toMinutes(appointment.time);
-        const existingDuration = (services.find((service) => service.name === appointment.service)?.duration ?? 30)
-          + (appointment.participantCategories?.slice(1).reduce((total, category) => total + additionalMinutesForCategory(category), 0) ?? Math.max(0, (appointment.guestCount ?? 1) - 1) * 25);
+        const existingDuration = roundToBookingUnits((services.find((service) => service.name === appointment.service)?.duration ?? 30)
+          + (appointment.participantCategories?.slice(1).reduce((total, category) => total + additionalMinutesForCategory(category, ageCategories), 0) ?? Math.max(0, (appointment.guestCount ?? 1) - 1) * 25));
         return candidateStart < existingStart + existingDuration && existingStart < candidateEnd;
       });
     });
-  }, [appointments, currentSalonMinutes, scheduledTimes, selectedDay, selectedDuration, services, todayKey]);
+  }, [ageCategories, appointments, currentSalonMinutes, scheduledTimes, selectedDay, selectedDuration, services, todayKey]);
   const queueEstimateMinutes = useMemo(() => {
     const durationFor = (serviceName: string) => services.find((service) => service.name === serviceName)?.duration ?? 30;
+    const durationForTicket = (ticket: (typeof tickets)[number]) => roundToBookingUnits(
+      durationFor(ticket.service) + (ticket.participantCategories?.slice(1).reduce((sum, category) => sum + additionalMinutesForCategory(category, ageCategories), 0) ?? Math.max(0, (ticket.guestCount ?? 1) - 1) * 25),
+    );
     const currentTicket = tickets.find((ticket) => ticket.status === 'serving');
-    const currentServiceMinutes = currentTicket ? durationFor(currentTicket.service) : 0;
-    const waitingServiceMinutes = waitingTickets.reduce((total, ticket) => total + durationFor(ticket.service), 0);
+    const currentServiceMinutes = currentTicket ? durationForTicket(currentTicket) : 0;
+    const waitingServiceMinutes = waitingTickets.reduce((total, ticket) => total + roundToBookingUnits(
+      durationFor(ticket.service) + (ticket.participantCategories?.slice(1).reduce((sum, category) => sum + additionalMinutesForCategory(category, ageCategories), 0) ?? Math.max(0, (ticket.guestCount ?? 1) - 1) * 25),
+    ), 0);
     return currentServiceMinutes + waitingServiceMinutes;
-  }, [services, tickets, waitingTickets]);
+  }, [ageCategories, services, tickets, waitingTickets]);
   const nearestQueueTime = useMemo(() => {
     const quarterHour = 15 * 60 * 1000;
     const estimatedTimestamp = Date.now() + queueEstimateMinutes * 60 * 1000;
@@ -203,7 +225,14 @@ export default function Booking() {
     setErrorMessage('');
     try {
       if (mode === 'queue') {
-        await joinQueue(selectedService.name, barber, participantCategories[0]);
+        await joinQueue({
+          service: selectedService.name,
+          barber,
+          ageCategory: participantCategories[0],
+          guestCount: participantCategories.length,
+          participantCategories,
+          paymentMethod,
+        });
       } else {
         await bookAppointment({
           date: selectedDay.date,
@@ -420,7 +449,6 @@ export default function Booking() {
                 ))}
               </div>
             </div>
-            {mode === 'appointment' && (
             <div className="mt-6 rounded-2xl border border-primary/20 bg-primary/5 p-4">
               <div className="flex flex-row-reverse items-center gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/15">
@@ -428,7 +456,7 @@ export default function Booking() {
                 </div>
                 <div className="flex-1 text-right">
                   <h3 className="text-sm font-bold text-foreground">لمن يكون الحجز؟</h3>
-                  <p className="mt-1 text-[11px] leading-5 text-muted-foreground">حدد فئة كل شخص؛ البالغ +25، الطفل +10، والشاب +20 دقيقة.</p>
+                  <p className="mt-1 text-[11px] leading-5 text-muted-foreground">حدد فئة كل شخص؛ الزيادة قابلة للتعديل من لوحة الحلاق، ومدة الحجز تُحسب بأدوار 20 دقيقة.</p>
                 </div>
               </div>
               <div className="mt-4 space-y-3">
@@ -472,8 +500,6 @@ export default function Booking() {
               </div>
               <p className="mt-2 text-center text-[10px] font-bold text-primary">مدة الخدمة المتوقعة: {selectedDuration} دقيقة</p>
             </div>
-            )}
-            {mode === 'appointment' && (
               <div className="mt-6">
                 <h3 className="mb-3 text-right text-sm font-bold text-foreground">طريقة الدفع</h3>
                 <div className="grid grid-cols-2 gap-2.5">
@@ -489,8 +515,24 @@ export default function Booking() {
                     </button>
                   ))}
                 </div>
+                {paymentMethod === 'bit' && (
+                  shopInfo.bitLink ? (
+                    <a
+                      href={shopInfo.bitLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-3 flex min-h-11 flex-row-reverse items-center justify-center gap-2 rounded-xl border border-primary/40 bg-primary/15 px-3 text-xs font-black text-primary"
+                    >
+                      <ExternalLink size={15} />
+                      فتح رابط Bit للدفع
+                    </a>
+                  ) : (
+                    <p className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-right text-[11px] leading-5 text-amber-700">
+                      لم يضف المحل رابط Bit بعد. يمكنك متابعة الطلب، وسيؤكد الحلاق الدفع يدوياً عند الحضور.
+                    </p>
+                  )
+                )}
               </div>
-            )}
             {mode === 'appointment' && (
               <div className="mt-6">
                 <h3 className="mb-3 text-right text-sm font-bold text-foreground">اليوم</h3>
@@ -517,7 +559,7 @@ export default function Booking() {
             <div className="mb-4 text-right">
               <p className="mb-1 text-xs font-bold text-primary">الخطوة الثالثة</p>
               <h2 id="booking-time-title" className="text-xl font-bold text-foreground">اختر الوقت</h2>
-              <p className="mt-2 text-sm text-muted-foreground">الأوقات المعروضة هي الفترات المتاحة لليوم الذي اخترته.</p>
+              <p className="mt-2 text-sm text-muted-foreground">الأوقات تبدأ كل 20 دقيقة. حجز أكثر من شخص يحتاج أدواراً متتالية بدون تداخل.</p>
             </div>
             <div className="flex flex-row-reverse flex-wrap gap-2.5">
               {scheduledTimes.map((item) => {
@@ -606,8 +648,7 @@ export default function Booking() {
                 <span className="text-xs text-muted-foreground">مدة الحجز</span>
                 <span className="text-sm font-bold text-primary">{selectedDuration} دقيقة</span>
               </div>
-              {mode === 'appointment' && (
-                <>
+              <>
                   <div className="flex flex-row-reverse items-start justify-between gap-4 p-4">
                     <span className="text-xs text-muted-foreground">فئات الأشخاص</span>
                     <span className="text-left text-sm font-bold text-foreground">{participantCategories.join('، ')}</span>
@@ -616,8 +657,7 @@ export default function Booking() {
                     <span className="text-xs text-muted-foreground">طريقة الدفع</span>
                     <span className="text-sm font-bold text-primary">{paymentMethod === 'bit' ? 'عبر bit' : 'كاش عند الحلاق'}</span>
                   </div>
-                </>
-              )}
+              </>
               <div className="flex flex-row-reverse items-center justify-between p-4">
                 <span className="text-xs text-muted-foreground">نوع الزيارة</span>
                 <span className="text-sm font-bold text-primary">{mode === 'queue' ? 'دور حالي' : `${selectedDay.label} · ${time}`}</span>

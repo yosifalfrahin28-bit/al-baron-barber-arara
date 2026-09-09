@@ -51,5 +51,7 @@ export * from './smsBroadcastResult';
 export * from './summonResult';
 export * from './ticket';
 export * from './ticketInput';
+export * from './ticketInputPaymentMethod';
+export * from './ticketPaymentMethod';
 export * from './updateSettingsBody';
 export * from './walkInInput';

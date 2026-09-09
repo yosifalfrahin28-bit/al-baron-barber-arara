@@ -5,8 +5,22 @@
  * Shared Al-Baron Barber Shop API
  * OpenAPI spec version: 0.2.0
  */
+import type { TicketInputPaymentMethod } from './ticketInputPaymentMethod';
 
 export interface TicketInput {
   barber: string;
   service: string;
+  ageCategory?: string;
+  /**
+     * @minimum 1
+     * @maximum 8
+     */
+  guestCount?: number;
+  /**
+     * @minItems 1
+     * @maxItems 8
+     * @items.minLength 1
+     */
+  participantCategories?: string[];
+  paymentMethod?: TicketInputPaymentMethod;
 }

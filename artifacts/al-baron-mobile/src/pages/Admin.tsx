@@ -1,659 +1,4 @@
-import { useEffect, useState } from 'react';
-import { useLocation } from 'wouter';
-import { ShieldAlert, ShieldX, ShieldCheck, ChevronLeft, Tv, QrCode, MapPin, Clock, CheckCircle, FileEdit, X, PlusCircle, ArrowRight, ScanLine, CalendarIcon, MessageCircle, Send, ExternalLink, Power, Pencil, Ban, Trash2, Search, KeyRound, Package, Store, UsersRound, MessageSquareHeart, Star } from 'lucide-react';
-import { useSalon, type AgeCategory, type Product, type ShopInfo } from '@/context/SalonContext';
-import { usePhoneAuth } from '@/context/AuthContext';
-import { getListAdminCustomersQueryKey, type Appointment, type Customer, type Service, type ScheduleSlot, useListAdminCustomers } from '@workspace/api-client-react';
-import { BottomNavigation, Card, GoldButton, IconButton, IconButtonLink, Screen, SectionTitle, StatusPill, cn } from '@/components/SalonUI';
-import { sessionJson, sessionRequest } from '@/lib/session-api';
-
-type MessageTemplate = { key: string; label: string; body: string };
-type AdminReview = {
-  id: string;
-  name: string;
-  phone: string;
-  rating: number;
-  feedback: string;
-  suggestion: string;
-  status: string;
-  createdAt: string;
-};
-
-export default function Admin() {
-  const [, setLocation] = useLocation();
-  const { user, isLoading: authLoading, signOut } = usePhoneAuth();
-  const role = user?.role ?? null;
-  
-  const {
-    shopOpen,
-    toggleShop,
-    tickets,
-    services,
-    ageCategories,
-    products,
-    shopInfo,
-    allAppointments,
-    schedule,
-    advanceQueue,
-    cancelTicket,
-    addWalkIn,
-    saveService,
-    deleteService,
-    summon,
-    addScheduleSlot,
-    updateScheduleSlot,
-    toggleScheduleSlot,
-    cancelAppointment,
-    saveAgeCategory,
-    deleteAgeCategory,
-    saveProduct,
-    deleteProduct,
-    saveShopInfo,
-  } = useSalon();
-  
-  const [tab, setTab] = useState<'queue' | 'services' | 'clients' | 'broadcast' | 'schedule' | 'appointments' | 'ages' | 'products' | 'shop' | 'templates' | 'reviews'>('queue');
-  const [modal, setModal] = useState(false);
-  const [editing, setEditing] = useState<Service | null>(null);
-  const [walkInModal, setWalkInModal] = useState(false);
-  const [walkInName, setWalkInName] = useState('');
-  const [draft, setDraft] = useState<Service>({ id: '', name: '', description: '', price: 0, duration: 30, visible: true });
-  const [broadcastMessage, setBroadcastMessage] = useState('');
-  const [broadcastConfirm, setBroadcastConfirm] = useState(false);
-  const [broadcastState, setBroadcastState] = useState<'idle' | 'counting' | 'sending' | 'success' | 'error'>('idle');
-  const [broadcastRecipientCount, setBroadcastRecipientCount] = useState(0);
-  const [broadcastSentCount, setBroadcastSentCount] = useState(0);
-  const [broadcastFailedCount, setBroadcastFailedCount] = useState(0);
-  const [broadcastLinks, setBroadcastLinks] = useState<Array<{ name: string; phone: string; url: string }>>([]);
-  const [broadcastError, setBroadcastError] = useState('');
-  const [scheduleModal, setScheduleModal] = useState(false);
-  const [editingSchedule, setEditingSchedule] = useState<ScheduleSlot | null>(null);
-  const [scheduleDraft, setScheduleDraft] = useState({ dayOfWeek: 0, time: '10:00', active: true });
-  const [cancelAppointmentId, setCancelAppointmentId] = useState<string | null>(null);
-  const [cancellationReason, setCancellationReason] = useState('');
-  const [customerSearch, setCustomerSearch] = useState('');
-  const [customerError, setCustomerError] = useState('');
-  const [queueError, setQueueError] = useState('');
-  const [shopError, setShopError] = useState('');
-  const [queuePending, setQueuePending] = useState(false);
-  const [shopPending, setShopPending] = useState(false);
-  const [actionError, setActionError] = useState('');
-  const [actionPending, setActionPending] = useState(false);
-  const [customerActionPending, setCustomerActionPending] = useState(false);
-  const [noticeDrafts, setNoticeDrafts] = useState<Record<string, string>>({});
-  const [passwordCustomer, setPasswordCustomer] = useState<Customer | null>(null);
-  const [newPassword, setNewPassword] = useState('');
-  const [passwordConfirmation, setPasswordConfirmation] = useState('');
-  const [passwordError, setPasswordError] = useState('');
-  const [smsBroadcastState, setSmsBroadcastState] = useState<'idle' | 'sending' | 'success' | 'unavailable' | 'error'>('idle');
-  const [smsBroadcastMessage, setSmsBroadcastMessage] = useState('');
-  const [ageModal, setAgeModal] = useState(false);
-  const [editingAge, setEditingAge] = useState<AgeCategory | null>(null);
-  const [ageDraft, setAgeDraft] = useState<AgeCategory>({ id: '', name: '', minAge: 0, maxAge: null, active: true, sortOrder: 0 });
-  const [productModal, setProductModal] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const [productDraft, setProductDraft] = useState<Product>({ id: '', name: '', description: '', price: 0, stock: 0, active: true });
-  const [shopDraft, setShopDraft] = useState<ShopInfo>(shopInfo);
-  const [locationPending, setLocationPending] = useState(false);
-  const [messageTemplates, setMessageTemplates] = useState<MessageTemplate[]>([]);
-  const [templatesLoading, setTemplatesLoading] = useState(false);
-  const [templateSaving, setTemplateSaving] = useState<string | null>(null);
-  const [reviews, setReviews] = useState<AdminReview[]>([]);
-  const [reviewsLoading, setReviewsLoading] = useState(false);
-  const [adminAppointments, setAdminAppointments] = useState<Appointment[]>([]);
-  const [appointmentsLoading, setAppointmentsLoading] = useState(false);
-
-  const customersQuery = useListAdminCustomers({ query: { queryKey: getListAdminCustomersQueryKey(), enabled: role === 'admin', refetchInterval: 5000 } });
-  
-  const active = tickets.find((ticket) => ticket.status === 'serving');
-  const waiting = tickets.filter((ticket) => ticket.status === 'waiting').sort((a, b) => a.number - b.number);
-  const displayedAppointments = adminAppointments.length > 0 || tab === 'appointments' ? adminAppointments : allAppointments;
-  const appointmentToCancel = displayedAppointments.find((appointment) => appointment.id === cancelAppointmentId);
-  const dayNames = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
-  const customers = customersQuery.data ?? [];
-  const filteredCustomers = customers.filter((customer) => {
-    const query = customerSearch.trim().toLowerCase();
-    return !query || customer.name.toLowerCase().includes(query) || customer.phone.includes(query);
-  });
-
-  useEffect(() => {
-    setShopDraft(shopInfo);
-  }, [shopInfo]);
-
-  useEffect(() => {
-    if (role !== 'admin') return;
-    let cancelled = false;
-    if (tab === 'templates') {
-      setTemplatesLoading(true);
-      sessionRequest<MessageTemplate[]>('/api/admin/message-templates')
-        .then((data) => {
-          if (!cancelled) setMessageTemplates(data);
-        })
-        .catch((error) => {
-          if (!cancelled) setActionError(getActionError(error));
-        })
-        .finally(() => {
-          if (!cancelled) setTemplatesLoading(false);
-        });
-    }
-    if (tab === 'reviews') {
-      setReviewsLoading(true);
-      sessionRequest<AdminReview[]>('/api/admin/reviews')
-        .then((data) => {
-          if (!cancelled) setReviews(data);
-        })
-        .catch((error) => {
-          if (!cancelled) setActionError(getActionError(error));
-        })
-        .finally(() => {
-          if (!cancelled) setReviewsLoading(false);
-        });
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [role, tab]);
-
-  useEffect(() => {
-    if (role !== 'admin' || tab !== 'appointments') return;
-    let cancelled = false;
-    const loadAppointments = async () => {
-      try {
-        const data = await sessionRequest<Appointment[]>('/api/admin/appointments');
-        if (!cancelled) setAdminAppointments(data);
-      } catch (error) {
-        if (!cancelled) setActionError(getActionError(error));
-      } finally {
-        if (!cancelled) setAppointmentsLoading(false);
-      }
-    };
-    setAppointmentsLoading(true);
-    void loadAppointments();
-    const interval = window.setInterval(() => { void loadAppointments(); }, 3000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, [role, tab]);
-  
-  const showService = (service?: Service) => { 
-    setEditing(service ?? null); 
-    setDraft(service ?? { id: `service-${Date.now()}`, name: '', description: '', price: 0, duration: 30, visible: true }); 
-    setModal(true); 
-  };
-  
-  const save = async () => { 
-    if (!draft.name.trim()) return; 
-    setActionError('');
-    setActionPending(true);
-    try {
-      await saveService(draft);
-      setModal(false);
-    } catch (error) {
-      setActionError(getActionError(error));
-    } finally {
-      setActionPending(false);
-    }
-  };
-  
-  const summonClient = (phone: string, name: string, id: string) => { 
-    summon(id, 'admin'); 
-    if (phone) {
-      window.open(`https://wa.me/${phone.replace(/^0/, '972')}?text=${encodeURIComponent(`مرحباً ${name}، تذكير بموعدك في صالون البارون! باقي على دورك 20 دقيقة، يرجى التوجه للصالون الآن لتنفيذ خدمتك في الوقت المحدد.`)}`, '_blank'); 
-    } else {
-      alert('تم تسجيل الإرسال لهذا الزبون.'); 
-    }
-  };
-
-  const showSchedule = (slot?: ScheduleSlot) => {
-    setEditingSchedule(slot ?? null);
-    setScheduleDraft(slot ? { dayOfWeek: slot.dayOfWeek, time: slot.time, active: slot.active } : { dayOfWeek: 0, time: '10:00', active: true });
-    setScheduleModal(true);
-  };
-
-  const showAge = (category?: AgeCategory) => {
-    setEditingAge(category ?? null);
-    setAgeDraft(category ?? { id: `age-${Date.now()}`, name: '', minAge: 0, maxAge: null, active: true, sortOrder: ageCategories.length });
-    setAgeModal(true);
-  };
-
-  const saveAge = async () => {
-    if (!ageDraft.name.trim()) return;
-    setActionError('');
-    setActionPending(true);
-    try {
-      await saveAgeCategory(ageDraft);
-      setAgeModal(false);
-    } catch (error) {
-      setActionError(getActionError(error));
-    } finally {
-      setActionPending(false);
-    }
-  };
-
-  const showProduct = (product?: Product) => {
-    setEditingProduct(product ?? null);
-    setProductDraft(product ?? { id: `product-${Date.now()}`, name: '', description: '', price: 0, stock: 0, active: true });
-    setProductModal(true);
-  };
-
-  const saveProductDraft = async () => {
-    if (!productDraft.name.trim()) return;
-    setActionError('');
-    setActionPending(true);
-    try {
-      await saveProduct(productDraft);
-      setProductModal(false);
-    } catch (error) {
-      setActionError(getActionError(error));
-    } finally {
-      setActionPending(false);
-    }
-  };
-
-  const saveShop = async () => {
-    setActionError('');
-    setActionPending(true);
-    try {
-      await saveShopInfo(shopDraft);
-    } catch (error) {
-      setActionError(getActionError(error));
-    } finally {
-      setActionPending(false);
-    }
-  };
-
-  const saveMessageTemplate = async (template: MessageTemplate) => {
-    setTemplateSaving(template.key);
-    setActionError('');
-    try {
-      const saved = await sessionJson<MessageTemplate>(`/api/admin/message-templates/${template.key}`, 'PATCH', { body: template.body });
-      setMessageTemplates((current) => current.map((item) => item.key === saved.key ? saved : item));
-    } catch (error) {
-      setActionError(getActionError(error));
-    } finally {
-      setTemplateSaving(null);
-    }
-  };
-
-  const updateReviewStatus = async (review: AdminReview, status: string) => {
-    try {
-      const updated = await sessionJson<AdminReview>(`/api/admin/reviews/${review.id}/status`, 'PATCH', { status });
-      setReviews((current) => current.map((item) => item.id === updated.id ? updated : item));
-    } catch (error) {
-      setActionError(getActionError(error));
-    }
-  };
-
-  const useCurrentShopLocation = () => {
-    setShopError('');
-    if (!navigator.geolocation) {
-      setShopError('المتصفح لا يدعم تحديد الموقع الحالي.');
-      return;
-    }
-
-    setLocationPending(true);
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => {
-        const mapsUrl = `https://www.google.com/maps?q=${coords.latitude.toFixed(6)},${coords.longitude.toFixed(6)}`;
-        setShopDraft((current) => ({ ...current, mapsUrl }));
-        setShopError('تم تحديد موقعك الحالي. اضغط «حفظ معلومات المحل» لتثبيته.');
-        setLocationPending(false);
-      },
-      (error) => {
-        setShopError(error.code === error.PERMISSION_DENIED
-          ? 'لم تسمح بالوصول إلى موقعك. فعّل إذن الموقع ثم حاول مرة أخرى.'
-          : 'تعذر تحديد موقعك الحالي. تحقق من GPS وحاول مرة أخرى.');
-        setLocationPending(false);
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
-    );
-  };
-
-  const saveSchedule = async () => {
-    if (!scheduleDraft.time) return;
-    setActionError('');
-    setActionPending(true);
-    try {
-      if (editingSchedule) {
-        await updateScheduleSlot(editingSchedule.id, scheduleDraft);
-      } else {
-        await addScheduleSlot(scheduleDraft);
-      }
-      setScheduleModal(false);
-    } catch (error) {
-      setActionError(getActionError(error));
-    } finally {
-      setActionPending(false);
-    }
-  };
-
-  const getActionError = (error: unknown) => {
-    const status = typeof error === 'object' && error !== null && 'status' in error
-      ? (error as { status?: number }).status
-      : undefined;
-    if (status === 401) {
-      void signOut().catch(() => undefined);
-      setLocation('/sign-in');
-      return 'انتهت جلسة الإدارة. سجّل الدخول مرة أخرى ثم حاول.';
-    }
-    if (status === 403) return 'لا تملك صلاحية تعديل هذه البيانات.';
-    return error instanceof Error ? error.message : 'تعذر حفظ التعديل. حاول مرة أخرى.';
-  };
-
-  const handleScheduleToggle = async (slot: ScheduleSlot) => {
-    setActionError('');
-    setActionPending(true);
-    try {
-      await toggleScheduleSlot(slot);
-    } catch (error) {
-      setActionError(getActionError(error));
-    } finally {
-      setActionPending(false);
-    }
-  };
-
-  const handleDeleteService = async (serviceId: string) => {
-    setActionError('');
-    setActionPending(true);
-    try {
-      await deleteService(serviceId);
-    } catch (error) {
-      setActionError(getActionError(error));
-    } finally {
-      setActionPending(false);
-    }
-  };
-
-  const handleDeleteAge = async (categoryId: string) => {
-    setActionError('');
-    setActionPending(true);
-    try {
-      await deleteAgeCategory(categoryId);
-    } catch (error) {
-      setActionError(getActionError(error));
-    } finally {
-      setActionPending(false);
-    }
-  };
-
-  const handleDeleteProduct = async (productId: string) => {
-    setActionError('');
-    setActionPending(true);
-    try {
-      await deleteProduct(productId);
-    } catch (error) {
-      setActionError(getActionError(error));
-    } finally {
-      setActionPending(false);
-    }
-  };
-
-  const confirmAppointmentCancellation = () => {
-    if (!appointmentToCancel) return;
-    cancelAppointment(appointmentToCancel.id, cancellationReason, (whatsappUrl) => {
-      setCancelAppointmentId(null);
-      setCancellationReason('');
-      if (whatsappUrl) {
-        window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-      } else {
-        alert('تم إلغاء الموعد، لكن لا يوجد رقم هاتف صالح لفتح WhatsApp.');
-      }
-    });
-  };
-
-  const toggleCustomerBan = async (customer: Customer) => {
-    const reason = customer.banned ? '' : window.prompt('سبب الحظر (اختياري):', customer.banReason) ?? null;
-    if (reason === null) return;
-    setCustomerError('');
-    setCustomerActionPending(true);
-    try {
-      await sessionJson(`/api/admin/customers/${customer.id}/ban`, 'PATCH', { banned: !customer.banned, reason });
-      await customersQuery.refetch();
-    } catch (error) {
-      setCustomerError(getActionError(error));
-    } finally {
-      setCustomerActionPending(false);
-    }
-  };
-
-  const toggleCustomerRole = async (customer: Customer) => {
-    const nextRole = customer.role === 'admin' ? 'client' : 'admin';
-    const action = nextRole === 'admin' ? 'منح صلاحية أدمن' : 'إزالة صلاحية أدمن';
-    if (!window.confirm(`${action} للحساب ${customer.name}؟`)) return;
-    setCustomerError('');
-    setCustomerActionPending(true);
-    try {
-      await sessionJson(`/api/admin/customers/${customer.id}/role`, 'PATCH', { role: nextRole });
-      await customersQuery.refetch();
-    } catch (error) {
-      setCustomerError(getActionError(error));
-    } finally {
-      setCustomerActionPending(false);
-    }
-  };
-
-  const removeCustomer = async (customer: Customer) => {
-    if (!window.confirm(`حذف حساب ${customer.name} نهائياً؟`)) return;
-    setCustomerError('');
-    setCustomerActionPending(true);
-    try {
-      await sessionRequest<void>(`/api/admin/customers/${customer.id}`, { method: 'DELETE' });
-      await customersQuery.refetch();
-    } catch (error) {
-      setCustomerError(getActionError(error));
-    } finally {
-      setCustomerActionPending(false);
-    }
-  };
-
-  const saveCustomerRestrictions = async (customer: Customer, bookingRestricted = customer.bookingRestricted ?? false) => {
-    setCustomerError('');
-    setCustomerActionPending(true);
-    try {
-      await sessionJson(`/api/admin/customers/${customer.id}/restrictions`, 'PATCH', {
-        bookingRestricted,
-        accountNotice: noticeDrafts[customer.id] ?? customer.accountNotice ?? '',
-      });
-      await customersQuery.refetch();
-    } catch (error) {
-      setCustomerError(getActionError(error));
-    } finally {
-      setCustomerActionPending(false);
-    }
-  };
-
-  const openPasswordReset = (customer: Customer) => {
-    setPasswordCustomer(customer);
-    setNewPassword('');
-    setPasswordConfirmation('');
-    setPasswordError('');
-  };
-
-  const submitPasswordReset = async () => {
-    if (!passwordCustomer) return;
-    if (newPassword.length < 8) {
-      setPasswordError('كلمة المرور يجب أن تتكون من 8 أحرف على الأقل.');
-      return;
-    }
-    if (newPassword !== passwordConfirmation) {
-      setPasswordError('كلمتا المرور غير متطابقتين.');
-      return;
-    }
-    setPasswordError('');
-    setCustomerActionPending(true);
-    try {
-      await sessionJson(`/api/admin/customers/${passwordCustomer.id}/password`, 'POST', { password: newPassword });
-      setPasswordCustomer(null);
-      setNewPassword('');
-      setPasswordConfirmation('');
-    } catch (error) {
-      setPasswordError(getActionError(error));
-    } finally {
-      setCustomerActionPending(false);
-    }
-  };
-
-  const openAppointmentMessage = (appointment: Appointment, message: string) => {
-    const phone = appointment.phone.replace(/\D/g, '').replace(/^0/, '972');
-    if (!phone) {
-      alert('لا يوجد رقم هاتف صالح لهذا الموعد.');
-      return;
-    }
-    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
-  };
-
-  const sendAppointmentReminder = (appointment: Appointment, kind: 'hour' | 'twenty') => {
-    const message = kind === 'hour'
-      ? `أهلاً ${appointment.name}، نود تذكيرك بأن موعد حلاقتك في صالون البارون سيكون بعد ساعة تقريباً الساعة ${appointment.time}. بنستناكم!`
-      : `أهلاً ${appointment.name}، موعدك في صالون البارون خلال 20 دقيقة (الساعة ${appointment.time}). يرجى التواجد في الصالون. بنستناك!`;
-    openAppointmentMessage(appointment, message);
-  };
-
-  const sendSmsBroadcast = async () => {
-    if (!smsBroadcastMessage.trim()) {
-      setSmsBroadcastState('error');
-      return;
-    }
-    setSmsBroadcastState('sending');
-    try {
-      const result = await sessionJson<{ enabled: boolean; sentCount: number }>('/api/admin/broadcast-sms', 'POST', { message: smsBroadcastMessage.trim() });
-      setSmsBroadcastState(result.enabled ? 'success' : 'unavailable');
-    } catch (error) {
-      setSmsBroadcastState('error');
-      setBroadcastError(error instanceof Error ? error.message : 'تعذر إرسال الرسالة الجماعية.');
-    }
-  };
-
-  const handleAdvanceQueue = async () => {
-    setQueueError('');
-    setQueuePending(true);
-    try {
-      await advanceQueue();
-    } catch {
-      setQueueError('تعذر تحديث الدور. تحقق من تسجيل الدخول وحاول مرة أخرى.');
-    } finally {
-      setQueuePending(false);
-    }
-  };
-
-  const handleToggleShop = async () => {
-    setShopError('');
-    setShopPending(true);
-    try {
-      await toggleShop();
-    } catch {
-      setShopError('تعذر حفظ حالة الصالون. حاول مرة أخرى.');
-    } finally {
-      setShopPending(false);
-    }
-  };
-
-  const prepareBroadcast = async () => {
-    if (!broadcastMessage.trim()) {
-      setBroadcastError('اكتب الرسالة قبل الإرسال.');
-      setBroadcastState('error');
-      return;
-    }
-    setBroadcastState('counting');
-    setBroadcastError('');
-    try {
-      const data = await sessionRequest<{ recipientCount: number }>('/api/admin/broadcast-whatsapp/recipients');
-      setBroadcastRecipientCount(data.recipientCount);
-      setBroadcastConfirm(true);
-      setBroadcastState('idle');
-    } catch (error) {
-      setBroadcastError(error instanceof Error ? error.message : 'تعذر تحميل عدد الزبائن');
-      setBroadcastState('error');
-    }
-  };
-
-  const sendBroadcast = async () => {
-    setBroadcastConfirm(false);
-    setBroadcastState('sending');
-    setBroadcastError('');
-    try {
-      const data = await sessionJson<{ links: Array<{ name: string; phone: string; url: string }>; sentCount: number; failedCount: number; recipientCount: number }>('/api/admin/broadcast-whatsapp', 'POST', { message: broadcastMessage.trim() });
-      setBroadcastLinks(data.links);
-      setBroadcastRecipientCount(data.recipientCount);
-      setBroadcastSentCount(data.sentCount);
-      setBroadcastFailedCount(data.failedCount);
-      if (data.sentCount === 0 && data.recipientCount > 0) {
-        setBroadcastError('لم يتم إرسال أي رسالة. تحقق من اتصال WhatsApp ثم حاول مرة أخرى.');
-        setBroadcastState('error');
-      } else {
-        setBroadcastState('success');
-      }
-    } catch (error) {
-      setBroadcastError(error instanceof Error ? error.message : 'تعذر تجهيز روابط WhatsApp');
-      setBroadcastState('error');
-    }
-  };
-
-  if (authLoading) {
-    return (
-      <Screen scroll={false} className="items-center justify-center p-7 gap-4">
-        <ShieldAlert size={48} className="text-primary animate-pulse" />
-        <h2 className="text-2xl font-black text-center text-foreground">جارٍ التحقق من صلاحياتك</h2>
-        <p className="text-sm text-center text-muted-foreground">هذه المساحة مخصصة لفريق صالون البارون.</p>
-      </Screen>
-    );
-  }
-  
-  if (!user || role !== 'admin') {
-    return (
-      <Screen scroll={false} className="items-center justify-center p-7 gap-4">
-        <ShieldX size={48} className="text-destructive" />
-        <h2 className="text-2xl font-black text-center text-foreground">لا تملك صلاحية الدخول</h2>
-        <p className="text-sm text-center text-muted-foreground mb-4">حسابك عميل. تواصل مع الإدارة إذا كنت من فريق الصالون.</p>
-        <GoldButton title="العودة" onPress={() => setLocation('/account')} />
-      </Screen>
-    );
-  }
-
-  return (
-    <>
-    <Screen>
-      <div className="flex flex-row-reverse justify-between items-center mb-6 pt-4 animate-fade-in">
-        <IconButtonLink icon={ChevronLeft} label="رجوع" href="/account" />
-        <div className="flex flex-col items-center">
-          <span className="text-[10px] font-bold tracking-[0.15em] text-primary">BARON CONTROL</span>
-          <span className="text-xl font-bold text-foreground mt-1">لوحة الحلاق</span>
-        </div>
-         <div className="flex flex-row-reverse gap-2">
-           <IconButtonLink icon={QrCode} label="ربط WhatsApp" href="/admin/qr" />
-           <IconButtonLink icon={Tv} label="شاشة الانتظار" href="/tv-display" />
-         </div>
-      </div>
-
-      <div className="flex flex-row-reverse justify-between items-center p-4 border border-border rounded-[20px] bg-card animate-slide-up" style={{animationDelay: '0.1s'}}>
-        <div className="text-right">
-          <div className="text-[11px] text-muted-foreground">حالة الصالون</div>
-          <div className="flex flex-row-reverse items-center gap-2 mt-1.5">
-            <div className={cn("w-2 h-2 rounded-full", shopOpen ? "bg-success" : "bg-destructive")} />
-            <div className="text-sm font-bold text-foreground">{shopOpen ? 'مفتوح ويستقبل الحجوزات' : 'مغلق — الحجوزات متوقفة'}</div>
-          </div>
-        </div>
-        
-        <label className="relative inline-flex items-center cursor-pointer">
-          <input type="checkbox" className="sr-only peer" checked={shopOpen} onChange={() => { void handleToggleShop(); }} disabled={shopPending} />
-          <div className={cn(
-            "w-12 h-6 rounded-full peer transition-colors after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all",
-            shopOpen ? "bg-primary/80 after:translate-x-6 after:border-white" : "bg-secondary peer-focus:ring-primary/30"
-          )}></div>
-        </label>
-      </div>
-      {shopError && <div className="mt-3 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-right text-xs text-destructive">{shopError}</div>}
-      {actionError && <div role="alert" className="mt-3 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-right text-xs text-destructive">{actionError}</div>}
-
-      <div className="flex flex-row-reverse gap-2.5 mt-3 animate-slide-up" style={{animationDelay: '0.2s'}}>
-        {[
-          { label: 'المنتظرون', value: waiting.length, icon: Clock },
-          { label: 'المواعيد المؤكدة', value: displayedAppointments.filter((appointment) => appointment.status === 'confirmed').length, icon: CalendarIcon },
-          { label: 'تمت خدمتهم', value: 24, icon: CheckCircle }
-        ].map((metric) => (
-          <Card key={metric.label} className="flex-1 p-3 flex flex-col items-end">
-            <metric.icon size={20} className="text-primary" />
-            <div className="text-[26px] font-bold mt-2 text-foreground leading-none">{metric.value}</div>
+oreground leading-none">{metric.value}</div>
             <div className="text-[11px] text-right mt-1 text-muted-foreground">{metric.label}</div>
           </Card>
         ))}
@@ -700,6 +45,11 @@ export default function Admin() {
               <div className="text-right">
                 <div className="text-xl font-bold text-foreground">{active?.name ?? 'لا يوجد زبون'}</div>
                 <div className="text-xs mt-1.5 text-muted-foreground">{active?.service ?? 'ابدأ الدور التالي'}</div>
+                {active?.paymentMethod === 'bit' && (
+                  <span className="mt-2 inline-flex rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10px] font-black text-primary">
+                    تم اختيار الدفع عبر Bit · غير متحقق
+                  </span>
+                )}
               </div>
             </div>
             
@@ -743,6 +93,14 @@ export default function Admin() {
                 <div className="flex-1 text-right">
                   <div className="text-sm font-bold text-foreground">{ticket.name}</div>
                   <div className="text-[11px] text-muted-foreground mt-1">{ticket.service} · {ticket.barber}</div>
+                  <div className="mt-1 text-[11px] text-muted-foreground">
+                    {ticket.participantCategories?.join('، ') ?? `${ticket.guestCount ?? 1} أشخاص`}
+                  </div>
+                  {ticket.paymentMethod === 'bit' && (
+                    <span className="mt-2 inline-flex rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10px] font-black text-primary">
+                      تم اختيار الدفع عبر Bit · غير متحقق
+                    </span>
+                  )}
                 </div>
                 <button 
                   onClick={() => summonClient(ticket.phone, ticket.name, ticket.id)} 
@@ -782,7 +140,7 @@ export default function Admin() {
                     <div className="mt-1 text-[11px] text-muted-foreground">
                       {appointment.participantCategories?.join('، ') ?? appointment.guestCount + ' أشخاص'}
                       {' · '}
-                      {appointment.paymentMethod === 'bit' ? 'الدفع عبر bit' : 'كاش عند الحلاق'}
+                      {appointment.paymentMethod === 'bit' ? 'تم اختيار الدفع عبر Bit · غير متحقق' : 'كاش عند الحلاق'}
                     </div>
                   </div>
                   <StatusPill positive={appointment.status === 'confirmed'}>
@@ -914,6 +272,8 @@ export default function Admin() {
                   <div className="text-sm font-bold text-foreground">{category.name}</div>
                   <div className="mt-1 text-[11px] text-muted-foreground">
                     {category.maxAge === null ? `${category.minAge}+ سنة` : `${category.minAge}–${category.maxAge} سنة`}
+                    {' · '}
+                    +{category.additionalMinutes} دقيقة للشخص الإضافي
                     {!category.active && ' · مخفية'}
                   </div>
                 </div>
@@ -975,6 +335,7 @@ export default function Admin() {
                 ['address', 'العنوان'],
                 ['mapsUrl', 'رابط الخرائط'],
                 ['instagramUrl', 'رابط Instagram'],
+                ['bitLink', 'رابط Bit للدفع'],
                 ['openingHours', 'ساعات العمل'],
               ] as const).map(([key, label]) => (
                 <div key={key}>
@@ -1403,9 +764,11 @@ export default function Admin() {
                 type="time"
                 value={scheduleDraft.time}
                 onChange={(event) => setScheduleDraft({ ...scheduleDraft, time: event.target.value })}
+                step={1200}
                 className="mt-2 h-12 w-full rounded-xl border border-border bg-black/30 px-4 text-left text-sm text-foreground outline-none focus:border-primary"
                 dir="ltr"
               />
+              <span className="mt-1 block text-right text-[11px] font-normal text-muted-foreground">اختر بداية متوافقة مع الشبكة: كل 20 دقيقة.</span>
             </label>
             <label className="mt-4 flex flex-row-reverse items-center justify-between rounded-xl border border-border p-4 text-sm font-bold text-foreground">
               <span>الفترة متاحة للحجز</span>
@@ -1436,6 +799,20 @@ export default function Admin() {
               <input type="number" min="0" value={ageDraft.minAge} onChange={(event) => setAgeDraft({ ...ageDraft, minAge: Number(event.target.value) || 0 })} placeholder="من عمر" className="h-12 flex-1 rounded-xl border border-border bg-black/20 px-4 text-right text-sm text-foreground outline-none focus:border-primary" />
               <input type="number" min="0" value={ageDraft.maxAge ?? ''} onChange={(event) => setAgeDraft({ ...ageDraft, maxAge: event.target.value === '' ? null : Number(event.target.value) })} placeholder="إلى عمر" className="h-12 flex-1 rounded-xl border border-border bg-black/20 px-4 text-right text-sm text-foreground outline-none focus:border-primary" />
             </div>
+            <label className="mt-3 block text-right text-sm font-bold text-foreground">
+              الزيادة للشخص الإضافي بالدقائق
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={ageDraft.additionalMinutes}
+                onChange={(event) => setAgeDraft({ ...ageDraft, additionalMinutes: Number(event.target.value) || 0 })}
+                placeholder="مثلاً 25"
+                className="mt-2 h-12 w-full rounded-xl border border-border bg-black/20 px-4 text-left text-sm text-foreground outline-none focus:border-primary"
+                dir="ltr"
+              />
+              <span className="mt-1 block text-right text-[11px] font-normal text-muted-foreground">تُحسب الزيادة لكل شخص بعد الأول، ثم تُقرّب مدة الحجز إلى أدوار 20 دقيقة.</span>
+            </label>
             <label className="mt-3 flex flex-row-reverse items-center justify-between rounded-xl border border-border p-4 text-sm font-bold text-foreground">
               <span>تظهر للزبون</span>
               <input type="checkbox" checked={ageDraft.active} onChange={(event) => setAgeDraft({ ...ageDraft, active: event.target.checked })} className="h-5 w-5 accent-primary" />

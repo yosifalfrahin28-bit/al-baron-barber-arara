@@ -229,8 +229,13 @@ function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-
                     مثال: <span dir="ltr" className="inline-block">052 123 4567</span>
                   </span>
                 </label>
-                <label className="block text-right text-sm font-bold text-foreground">
+                <label className="relative block text-right text-sm font-bold text-foreground">
                   {resetMode ? 'كلمة المرور الجديدة' : 'كلمة المرور'}
+                  {mode === 'sign-in' && !resetMode && (
+                    <button type="button" onClick={() => { setResetMode(true); setError(''); setNotice(''); setPassword(''); setPasswordConfirmation(''); }} className="absolute left-0 top-0 text-[10px] font-black text-primary underline-offset-2 hover:underline">
+                      تغيير كلمة المرور
+                    </button>
+                  )}
                   <input
                     required
                     minLength={8}
@@ -243,14 +248,6 @@ function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-
                     className="mt-2 h-12 w-full rounded-xl border border-border bg-black/30 px-4 text-left text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
                   />
                 </label>
-                {mode === 'sign-in' && !resetMode && (
-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-primary/25 bg-primary/10 px-3 py-2.5 text-right">
-                    <span className="text-xs font-bold text-muted-foreground">نسيت كلمة المرور؟</span>
-                    <button type="button" onClick={() => { setResetMode(true); setError(''); setNotice(''); setPassword(''); setPasswordConfirmation(''); }} className="shrink-0 rounded-lg bg-primary/15 px-3 py-2 text-xs font-black text-primary hover:bg-primary/25">
-                      تغيير كلمة المرور
-                    </button>
-                  </div>
-                )}
                 {(mode === 'sign-up' || resetMode) && (
                   <label className="block text-right text-sm font-bold text-foreground">
                     {resetMode ? 'تأكيد كلمة المرور الجديدة' : 'تأكيد كلمة المرور'}

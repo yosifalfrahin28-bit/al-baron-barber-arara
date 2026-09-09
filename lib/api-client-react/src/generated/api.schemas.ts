@@ -215,9 +215,30 @@ export interface CustomerPasswordResetInput {
   password: string;
 }
 
+export type TicketInputPaymentMethod = typeof TicketInputPaymentMethod[keyof typeof TicketInputPaymentMethod];
+
+
+export const TicketInputPaymentMethod = {
+  bit: 'bit',
+  cash_at_shop: 'cash_at_shop',
+} as const;
+
 export interface TicketInput {
   barber: string;
   service: string;
+  ageCategory?: string;
+  /**
+     * @minimum 1
+     * @maximum 8
+     */
+  guestCount?: number;
+  /**
+     * @minItems 1
+     * @maxItems 8
+     * @items.minLength 1
+     */
+  participantCategories?: string[];
+  paymentMethod?: TicketInputPaymentMethod;
 }
 
 export interface WalkInInput {
@@ -227,6 +248,14 @@ export interface WalkInInput {
   service?: string;
 }
 
+export type TicketPaymentMethod = typeof TicketPaymentMethod[keyof typeof TicketPaymentMethod];
+
+
+export const TicketPaymentMethod = {
+  bit: 'bit',
+  cash_at_shop: 'cash_at_shop',
+} as const;
+
 export interface Ticket {
   id: string;
   number: number;
@@ -234,6 +263,12 @@ export interface Ticket {
   phone: string;
   barber: string;
   service: string;
+  ageCategory: string;
+  /** @minimum 1 */
+  guestCount: number;
+  /** @minItems 1 */
+  participantCategories: string[];
+  paymentMethod: TicketPaymentMethod;
   status: string;
   /** @minimum 0 */
   queuePosition: number;

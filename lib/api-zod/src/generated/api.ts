@@ -19,9 +19,13 @@ export const HealthCheckResponse = zod.object({
 /**
  * @summary Read the live salon state
  */
+
+
 export const getSalonStateResponseCurrentTicketOneQueuePositionMin = 0;
 
 export const getSalonStateResponseCurrentTicketOnePeopleAheadMin = 0;
+
+
 
 export const getSalonStateResponseWaitingTicketsItemQueuePositionMin = 0;
 
@@ -55,6 +59,10 @@ export const GetSalonStateResponse = zod.object({
   "phone": zod.string(),
   "barber": zod.string(),
   "service": zod.string(),
+  "ageCategory": zod.string(),
+  "guestCount": zod.number().int().min(1),
+  "participantCategories": zod.array(zod.string()).min(1),
+  "paymentMethod": zod.enum(['bit', 'cash_at_shop']),
   "status": zod.string(),
   "queuePosition": zod.number().int().min(getSalonStateResponseCurrentTicketOneQueuePositionMin),
   "peopleAhead": zod.number().int().min(getSalonStateResponseCurrentTicketOnePeopleAheadMin),
@@ -68,6 +76,10 @@ export const GetSalonStateResponse = zod.object({
   "phone": zod.string(),
   "barber": zod.string(),
   "service": zod.string(),
+  "ageCategory": zod.string(),
+  "guestCount": zod.number().int().min(1),
+  "participantCategories": zod.array(zod.string()).min(1),
+  "paymentMethod": zod.enum(['bit', 'cash_at_shop']),
   "status": zod.string(),
   "queuePosition": zod.number().int().min(getSalonStateResponseWaitingTicketsItemQueuePositionMin),
   "peopleAhead": zod.number().int().min(getSalonStateResponseWaitingTicketsItemPeopleAheadMin),
@@ -563,10 +575,24 @@ export const UpdateReviewStatusResponse = zod.object({
 })
 
 
+export const createTicketBodyGuestCountDefault = 1;
+export const createTicketBodyGuestCountMax = 8;
+
+
+export const createTicketBodyParticipantCategoriesMax = 8;
+
+export const createTicketBodyPaymentMethodDefault = `bit`;
+
 export const CreateTicketBody = zod.object({
   "barber": zod.string(),
-  "service": zod.string()
+  "service": zod.string(),
+  "ageCategory": zod.string().optional(),
+  "guestCount": zod.number().int().min(1).max(createTicketBodyGuestCountMax).default(createTicketBodyGuestCountDefault),
+  "participantCategories": zod.array(zod.string().min(1)).min(1).max(createTicketBodyParticipantCategoriesMax).optional(),
+  "paymentMethod": zod.enum(['bit', 'cash_at_shop']).default(createTicketBodyPaymentMethodDefault)
 })
+
+
 
 export const createTicketResponseQueuePositionMin = 0;
 
@@ -581,6 +607,10 @@ export const CreateTicketResponse = zod.object({
   "phone": zod.string(),
   "barber": zod.string(),
   "service": zod.string(),
+  "ageCategory": zod.string(),
+  "guestCount": zod.number().int().min(1),
+  "participantCategories": zod.array(zod.string()).min(1),
+  "paymentMethod": zod.enum(['bit', 'cash_at_shop']),
   "status": zod.string(),
   "queuePosition": zod.number().int().min(createTicketResponseQueuePositionMin),
   "peopleAhead": zod.number().int().min(createTicketResponsePeopleAheadMin),
@@ -592,6 +622,8 @@ export const CreateTicketResponse = zod.object({
 export const CancelTicketParams = zod.object({
   "id": zod.coerce.string()
 })
+
+
 
 export const cancelTicketResponseQueuePositionMin = 0;
 
@@ -606,12 +638,18 @@ export const CancelTicketResponse = zod.object({
   "phone": zod.string(),
   "barber": zod.string(),
   "service": zod.string(),
+  "ageCategory": zod.string(),
+  "guestCount": zod.number().int().min(1),
+  "participantCategories": zod.array(zod.string()).min(1),
+  "paymentMethod": zod.enum(['bit', 'cash_at_shop']),
   "status": zod.string(),
   "queuePosition": zod.number().int().min(cancelTicketResponseQueuePositionMin),
   "peopleAhead": zod.number().int().min(cancelTicketResponsePeopleAheadMin),
   "reminderSent": zod.boolean(),
   "createdAt": zod.coerce.date()
 })
+
+
 
 
 export const advanceQueueResponseQueuePositionMin = 0;
@@ -627,6 +665,10 @@ export const AdvanceQueueResponse = zod.object({
   "phone": zod.string(),
   "barber": zod.string(),
   "service": zod.string(),
+  "ageCategory": zod.string(),
+  "guestCount": zod.number().int().min(1),
+  "participantCategories": zod.array(zod.string()).min(1),
+  "paymentMethod": zod.enum(['bit', 'cash_at_shop']),
   "status": zod.string(),
   "queuePosition": zod.number().int().min(advanceQueueResponseQueuePositionMin),
   "peopleAhead": zod.number().int().min(advanceQueueResponsePeopleAheadMin),
@@ -642,6 +684,8 @@ export const AddWalkInBody = zod.object({
   "service": zod.string().optional()
 })
 
+
+
 export const addWalkInResponseQueuePositionMin = 0;
 
 export const addWalkInResponsePeopleAheadMin = 0;
@@ -655,6 +699,10 @@ export const AddWalkInResponse = zod.object({
   "phone": zod.string(),
   "barber": zod.string(),
   "service": zod.string(),
+  "ageCategory": zod.string(),
+  "guestCount": zod.number().int().min(1),
+  "participantCategories": zod.array(zod.string()).min(1),
+  "paymentMethod": zod.enum(['bit', 'cash_at_shop']),
   "status": zod.string(),
   "queuePosition": zod.number().int().min(addWalkInResponseQueuePositionMin),
   "peopleAhead": zod.number().int().min(addWalkInResponsePeopleAheadMin),

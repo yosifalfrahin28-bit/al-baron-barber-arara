@@ -24,6 +24,7 @@ export type AgeCategory = {
   name: string;
   minAge: number;
   maxAge: number | null;
+  additionalMinutes: number;
   active: boolean;
   sortOrder: number;
 };
@@ -44,6 +45,7 @@ export type ShopInfo = {
   address: string;
   mapsUrl: string;
   instagramUrl: string;
+  bitLink: string;
   openingHours: string;
 };
 
@@ -70,7 +72,7 @@ type SalonContextValue = {
   isOffline: boolean;
   setProfile: (profile: LocalProfile) => void;
   setSelectedStyle: (style: string | null) => void;
-  joinQueue: (service: string, barber: string, ageCategory?: string) => Promise<void>;
+  joinQueue: (details: { service: string; barber: string; ageCategory?: string; guestCount?: number; participantCategories?: string[]; paymentMethod?: 'bit' | 'cash_at_shop' }) => Promise<void>;
   bookAppointment: (details: { date: string; time: string; barber: string; service: string; ageCategory?: string; guestCount?: number; participantCategories?: string[]; paymentMethod?: 'bit' | 'cash_at_shop' }) => Promise<void>;
   advanceQueue: () => Promise<void>;
   cancelTicket: (id?: string, source?: 'account' | 'admin') => void;
@@ -94,7 +96,7 @@ type SalonContextValue = {
 
 const STORAGE_KEY = 'al-baron-profile-v2';
 const DEFAULT_PROFILE: LocalProfile = { name: 'أحمد', phone: '0527752778', note: 'درجة التنعيم المفضلة: 1.5' };
-const DEFAULT_SHOP_INFO: ShopInfo = { shopName: 'صالون البارون', phone: '', whatsapp: '', address: '', mapsUrl: '', instagramUrl: '', openingHours: '' };
+const DEFAULT_SHOP_INFO: ShopInfo = { shopName: 'صالون البارون', phone: '', whatsapp: '', address: '', mapsUrl: '', instagramUrl: '', bitLink: '', openingHours: '' };
 
 const SalonContext = createContext<SalonContextValue | null>(null);
 
@@ -144,16 +146,16 @@ export function SalonProvider({ children }: { children: ReactNode }) {
   
   const setSelectedStyle = (style: string | null) => setSelectedStyleState(style);
   
-  const joinQueue = async (service: string, barber: string, ageCategory = 'بالغون'): Promise<void> => {
-    const selectedService = services.find((item) => item.name === service);
-    const createdTicket = await sessionJson<Ticket>('/api/tickets', 'POST', { barber, service, ageCategory });
+  const joinQueue = async (details: { service: string; barber: string; ageCategory?: string; guestCount?: number; participantCategories?: string[]; paymentMethod?: 'bit' | 'cash_at_shop' }): Promise<void> => {
+    const selectedService = services.find((item) => item.name === details.service);
+    const createdTicket = await sessionJson<Ticket>('/api/tickets', 'POST', details);
     queryClient.setQueryData<SalonState>(getGetSalonStateQueryKey(), (current) => current ? {
       ...current,
       waitingTickets: [...current.waitingTickets, createdTicket].sort((a, b) => a.number - b.number),
     } : current);
     trackEvent('queue_joined', {
       service_duration_minutes: selectedService?.duration ?? 0,
-      barber_choice: barberCategory(barber),
+      barber_choice: barberCategory(details.barber),
       has_style_reference: Boolean(selectedStyle),
     });
     await refreshState();
@@ -280,7 +282,7 @@ export function SalonProvider({ children }: { children: ReactNode }) {
   };
 
   const saveAgeCategory = async (category: AgeCategory): Promise<void> => {
-    const payload = { name: category.name, minAge: category.minAge, maxAge: category.maxAge, active: category.active, sortOrder: category.sortOrder };
+    const payload = { name: category.name, minAge: category.minAge, maxAge: category.maxAge, additionalMinutes: category.additionalMinutes, active: category.active, sortOrder: category.sortOrder };
     const currentCategories = (stateQuery.data as ExtendedSalonState | undefined)?.ageCategories ?? [];
     const saved = currentCategories.some((item) => item.id === category.id)
       ? await sessionJson<AgeCategory>(`/api/age-categories/${category.id}`, 'PATCH', payload)

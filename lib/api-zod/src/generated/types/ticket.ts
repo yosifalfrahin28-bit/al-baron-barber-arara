@@ -5,6 +5,7 @@
  * Shared Al-Baron Barber Shop API
  * OpenAPI spec version: 0.2.0
  */
+import type { TicketPaymentMethod } from './ticketPaymentMethod';
 
 export interface Ticket {
   id: string;
@@ -13,6 +14,12 @@ export interface Ticket {
   phone: string;
   barber: string;
   service: string;
+  ageCategory: string;
+  /** @minimum 1 */
+  guestCount: number;
+  /** @minItems 1 */
+  participantCategories: string[];
+  paymentMethod: TicketPaymentMethod;
   status: string;
   /** @minimum 0 */
   queuePosition: number;
