@@ -62,9 +62,11 @@ export async function startWhatsApp() {
         qrUpdatedAt = new Date();
         qrcode.generate(qr, { small: true }, (terminalQr) => {
           logger.warn(
-            { qr: terminalQr, authDir },
-            "WhatsApp QR code ready — scan the block above from WhatsApp > Linked devices",
+            { authDir },
+            "WhatsApp QR code ready — scan the block printed immediately below from WhatsApp > Linked devices",
           );
+          const printableQr = terminalQr.replace(/\u001b\[[0-9;]*m/g, "");
+          process.stdout.write(`\n${printableQr}\n\n`);
         });
       }
       if (connection === "open") {
