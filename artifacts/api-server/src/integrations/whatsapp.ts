@@ -4,7 +4,7 @@ import makeWASocket, {
   type WASocket,
 } from "@whiskeysockets/baileys";
 import qrcode from "qrcode-terminal";
-import { mkdir } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { logger } from "../lib/logger";
 
@@ -33,6 +33,17 @@ function scheduleReconnect() {
     reconnectTimer = null;
     void startWhatsApp();
   }, 5000);
+}
+
+async function resetLoggedOutSession() {
+  try {
+    await rm(authDir, { recursive: true, force: true });
+    logger.warn({ authDir }, "WhatsApp session cleared after logout; preparing a new QR code");
+  } catch (error) {
+    logger.error({ error, authDir }, "Could not clear the logged-out WhatsApp session");
+  } finally {
+    scheduleReconnect();
+  }
 }
 
 export async function startWhatsApp() {
@@ -84,7 +95,7 @@ export async function startWhatsApp() {
           logger.warn({ statusCode }, "WhatsApp disconnected; reconnecting");
           scheduleReconnect();
         } else {
-          logger.error("WhatsApp was logged out; scan a new QR code after clearing the saved auth directory");
+          void resetLoggedOutSession();
         }
       }
     });

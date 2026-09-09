@@ -17,6 +17,7 @@ import Admin from "./pages/Admin";
 import TvDisplay from "./pages/TvDisplay";
 import WhatsAppQr from "./pages/WhatsAppQr";
 import WhatsAppSetup from "./pages/WhatsAppSetup";
+import WhatsAppPairingQr from "./components/WhatsAppPairingQr";
 import Reviews from "./pages/Reviews";
 import NotFound from "./pages/NotFound";
 import { Share2, X } from "lucide-react";
@@ -256,15 +257,7 @@ function AuthScreen({ initialMode }: { initialMode: "sign-in" | "sign-up" }) {
                   {submitting ? (mode === 'sign-in' ? 'جارٍ تسجيل الدخول...' : 'جارٍ إرسال رمز التحقق...') : mode === 'sign-in' ? 'تسجيل الدخول' : 'إنشاء الحساب وإرسال الرمز'}
                 </button>
               </form>
-              {import.meta.env.VITE_WHATSAPP_SETUP_ENABLED === 'true' && (
-                <button
-                  type="button"
-                  onClick={() => setLocation('/whatsapp-setup')}
-                  className="mt-4 h-11 w-full rounded-xl border border-[#25D366]/40 bg-[#25D366]/10 text-sm font-bold text-[#9af0b7] transition-colors hover:bg-[#25D366]/20"
-                >
-                  ربط WhatsApp للإدارة
-                </button>
-              )}
+              {step === 'details' && <WhatsAppPairingQr compact />}
             </>
           ) : (
             <div className="text-center">
