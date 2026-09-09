@@ -11,6 +11,30 @@ type BookingMode = 'queue' | 'appointment';
 
 const barbers = ['أول حلاق متاح', 'سامر', 'فادي'];
 const namedDays = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+const salonTimeZone = 'Asia/Jerusalem';
+
+function salonDateKey(date: Date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: salonTimeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
+  return `${value('year')}-${value('month')}-${value('day')}`;
+}
+
+function salonMinutes(date: Date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: salonTimeZone,
+    hourCycle: 'h23',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(date);
+  const value = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? 0);
+  return value('hour') * 60 + value('minute') + value('second') / 60;
+}
 
 export default function Booking() {
   const [, setLocation] = useLocation();
@@ -27,6 +51,7 @@ export default function Booking() {
   const [isConfirming, setIsConfirming] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [nowTick, setNowTick] = useState(() => Date.now());
 
   const visibleServices = useMemo(() => services.filter((service) => service.visible), [services]);
   const selectedService = visibleServices.find((service) => service.id === serviceId) ?? visibleServices[0];
@@ -37,7 +62,7 @@ export default function Booking() {
       offset,
       dayOfWeek: date.getDay(),
       label: offset === 0 ? 'اليوم' : offset === 1 ? 'غداً' : namedDays[date.getDay()],
-      date: date.toISOString().slice(0, 10),
+      date: salonDateKey(date),
     };
   }), []);
   const selectedDay = dayOptions[dayOffset] ?? dayOptions[0];
@@ -46,6 +71,8 @@ export default function Booking() {
     .map((slot) => slot.time)
     .sort(), [schedule, selectedDay]);
   const selectedDuration = (selectedService?.duration ?? 30) + Math.max(0, guestCount - 1) * 20;
+  const todayKey = salonDateKey(new Date(nowTick));
+  const currentSalonMinutes = salonMinutes(new Date(nowTick));
   const availableTimes = useMemo(() => {
     const toMinutes = (value: string) => {
       const [hours, minutes] = value.split(':').map(Number);
@@ -53,6 +80,7 @@ export default function Booking() {
     };
     return scheduledTimes.filter((candidate) => {
       const candidateStart = toMinutes(candidate);
+      if (selectedDay?.date === todayKey && candidateStart <= currentSalonMinutes + 10) return false;
       const candidateEnd = candidateStart + selectedDuration;
       return !appointments.some((appointment) => {
         if (appointment.date !== selectedDay?.date || appointment.status === 'cancelled') return false;
@@ -62,7 +90,7 @@ export default function Booking() {
         return candidateStart < existingStart + existingDuration && existingStart < candidateEnd;
       });
     });
-  }, [appointments, scheduledTimes, selectedDay, selectedDuration, services]);
+  }, [appointments, currentSalonMinutes, scheduledTimes, selectedDay, selectedDuration, services, todayKey]);
   const queueEstimateMinutes = useMemo(() => {
     const durationFor = (serviceName: string) => services.find((service) => service.name === serviceName)?.duration ?? 30;
     const currentTicket = tickets.find((ticket) => ticket.status === 'serving');
@@ -76,6 +104,11 @@ export default function Booking() {
     return new Date(Math.ceil(estimatedTimestamp / quarterHour) * quarterHour)
       .toLocaleTimeString('ar-IL', { hour: '2-digit', minute: '2-digit', hour12: false });
   }, [queueEstimateMinutes]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowTick(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (visibleServices.length > 0 && !visibleServices.some((service) => service.id === serviceId)) {
@@ -419,6 +452,9 @@ export default function Booking() {
             <div className="flex flex-row-reverse flex-wrap gap-2.5">
               {scheduledTimes.map((item) => {
                 const available = availableTimes.includes(item);
+                const [hours, minutes] = item.split(':').map(Number);
+                const itemMinutes = hours * 60 + minutes;
+                const tooSoon = selectedDay?.date === todayKey && itemMinutes <= currentSalonMinutes + 10;
                 return (
                 <button
                   type="button"
@@ -429,7 +465,7 @@ export default function Booking() {
                   className={cn('w-[calc(33.333%-7px)] rounded-xl border py-3 transition-colors', time === item ? 'border-primary bg-primary/10' : available ? 'border-border bg-card hover:border-primary/50' : 'cursor-not-allowed border-border/50 bg-secondary/50 opacity-60')}
                 >
                   <span className={cn('text-sm font-bold', time === item ? 'text-primary' : 'text-foreground')}>{item}</span>
-                  <span className={cn('mt-1 block text-[9px]', available ? 'text-success' : 'text-muted-foreground')}>{available ? 'متاح' : 'محجوز'}</span>
+                  <span className={cn('mt-1 block text-[9px]', available ? 'text-success' : tooSoon ? 'text-destructive' : 'text-muted-foreground')}>{available ? 'متاح' : tooSoon ? 'مغلق' : 'محجوز'}</span>
                 </button>
                 );
               })}
@@ -437,7 +473,7 @@ export default function Booking() {
                 <div className="w-full rounded-2xl border border-border bg-card p-5 text-center text-sm text-muted-foreground">لا توجد فترات متاحة لهذا اليوم حالياً.</div>
               )}
               {scheduledTimes.length > 0 && availableTimes.length === 0 && (
-                <div className="w-full rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-center text-xs font-semibold leading-6 text-destructive">كل أوقات هذا اليوم محجوزة أو لا تكفي لمدة الحجز المختارة.</div>
+                <div className="w-full rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-center text-xs font-semibold leading-6 text-destructive">لا توجد أوقات يمكن حجزها الآن؛ الأوقات الماضية أو التي بقي عليها أقل من 10 دقائق مغلقة تلقائياً.</div>
               )}
             </div>
           </section>

@@ -195,6 +195,29 @@ function parseTimeMinutes(value: string) {
   return Number(match[1]) * 60 + Number(match[2]);
 }
 
+function getSalonClock() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Jerusalem",
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(new Date());
+  const value = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? 0);
+  return {
+    date: `${value("year")}-${String(value("month")).padStart(2, "0")}-${String(value("day")).padStart(2, "0")}`,
+    minutes: value("hour") * 60 + value("minute") + value("second") / 60,
+  };
+}
+
+function isAppointmentTooSoon(date: string, requestedStart: number) {
+  const now = getSalonClock();
+  return date === now.date && requestedStart <= now.minutes + 10;
+}
+
 function appointmentDurationMinutes(
   serviceName: string,
   guestCount: number,
@@ -891,6 +914,12 @@ router.post("/appointments", requireAuth, requireBookingAccess, async (req, res,
     const requestedStart = parseTimeMinutes(time);
     if (requestedStart === null || date === "اليوم") {
       return res.status(400).json({ message: "تاريخ ووقت الحجز غير صالحين" });
+    }
+    if (isAppointmentTooSoon(date, requestedStart)) {
+      return res.status(400).json({
+        code: "APPOINTMENT_CUTOFF",
+        message: "لا يمكن حجز هذا الوقت لأنه بدأ أو بقي عليه أقل من 10 دقائق، اختر وقتاً لاحقاً",
+      });
     }
 
     const [appointment] = await db.transaction(async (tx) => {
