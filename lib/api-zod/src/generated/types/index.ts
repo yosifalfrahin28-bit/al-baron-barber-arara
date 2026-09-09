@@ -18,6 +18,8 @@ export * from './customer';
 export * from './customerBanInput';
 export * from './customerPasswordResetInput';
 export * from './customerRestrictionsInput';
+export * from './customerRoleInput';
+export * from './customerRoleInputRole';
 export * from './healthStatus';
 export * from './listAppointmentsParams';
 export * from './messageTemplate';

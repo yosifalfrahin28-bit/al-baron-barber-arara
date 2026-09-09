@@ -393,6 +393,31 @@ export const SetCustomerBanResponse = zod.object({
 
 
 /**
+ * @summary Grant or remove admin access for an account
+ */
+export const SetCustomerRoleParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const SetCustomerRoleBody = zod.object({
+  "role": zod.enum(['admin', 'client'])
+})
+
+export const SetCustomerRoleResponse = zod.object({
+  "id": zod.string(),
+  "phone": zod.string(),
+  "name": zod.string(),
+  "note": zod.string(),
+  "role": zod.string(),
+  "banned": zod.boolean(),
+  "banReason": zod.string(),
+  "bookingRestricted": zod.boolean().optional(),
+  "accountNotice": zod.string().optional(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Restrict customer booking and update an account notice
  */
 export const UpdateCustomerRestrictionsParams = zod.object({

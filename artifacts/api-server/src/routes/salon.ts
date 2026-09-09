@@ -1,5 +1,5 @@
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
-import { and, asc, desc, eq, max, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, max, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   salonAppointments,
@@ -668,11 +668,50 @@ router.get("/admin/customers", requireAuth, requireAdmin, async (_req, res, next
       bookingRestricted: salonUsers.bookingRestricted,
       accountNotice: salonUsers.accountNotice,
       createdAt: salonUsers.createdAt,
-    }).from(salonUsers).where(eq(salonUsers.role, "client")).orderBy(desc(salonUsers.createdAt));
+    }).from(salonUsers).orderBy(desc(salonUsers.createdAt));
     return res.json(customers.map((customer) => ({
       ...customer,
       createdAt: customer.createdAt.toISOString(),
     })));
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.patch("/admin/customers/:id/role", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const customerId = text(req.params.id);
+    const role = text(req.body?.role);
+    if (role !== "admin" && role !== "client") {
+      return res.status(400).json({ message: "role must be admin or client" });
+    }
+    const [customer] = await db.select().from(salonUsers).where(eq(salonUsers.id, customerId)).limit(1);
+    if (!customer) return res.status(404).json({ message: "customer not found" });
+    if (customer.id === req.salonUser!.id && role !== "admin") {
+      return res.status(400).json({ message: "لا يمكنك إزالة صلاحية الإدارة من حسابك" });
+    }
+    if (customer.role === "admin" && role === "client") {
+      const [{ adminCount }] = await db.select({ adminCount: count() }).from(salonUsers).where(eq(salonUsers.role, "admin"));
+      if (adminCount <= 1) {
+        return res.status(400).json({ message: "يجب أن يبقى حساب أدمن واحد على الأقل" });
+      }
+    }
+    const [updated] = await db.update(salonUsers)
+      .set({ role, updatedAt: new Date() })
+      .where(eq(salonUsers.id, customerId))
+      .returning();
+    return res.json({
+      id: updated.id,
+      phone: updated.phone,
+      name: updated.name,
+      note: updated.note,
+      role: updated.role,
+      banned: updated.isBanned,
+      banReason: updated.banReason,
+      bookingRestricted: updated.bookingRestricted,
+      accountNotice: updated.accountNotice,
+      createdAt: updated.createdAt.toISOString(),
+    });
   } catch (error) {
     return next(error);
   }

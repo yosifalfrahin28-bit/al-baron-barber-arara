@@ -293,6 +293,29 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Customer"
+  /admin/customers/{id}/role:
+    patch:
+      operationId: setCustomerRole
+      tags: [auth]
+      summary: Grant or remove admin access for an account
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomerRoleInput"
+      responses:
+        "200":
+          description: Updated account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
   /admin/customers/{id}/restrictions:
     patch:
       operationId: updateCustomerRestrictions
@@ -866,6 +889,11 @@ components:
       properties:
         banned: { type: boolean }
         reason: { type: string, maxLength: 500 }
+    CustomerRoleInput:
+      type: object
+      required: [role]
+      properties:
+        role: { type: string, enum: [admin, client] }
     CustomerRestrictionsInput:
       type: object
       required: [bookingRestricted]

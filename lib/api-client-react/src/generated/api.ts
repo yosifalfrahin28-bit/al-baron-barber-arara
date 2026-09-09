@@ -31,6 +31,7 @@ import type {
   CustomerBanInput,
   CustomerPasswordResetInput,
   CustomerRestrictionsInput,
+  CustomerRoleInput,
   HealthStatus,
   ListAppointmentsParams,
   MessageTemplate,
@@ -1401,6 +1402,78 @@ export const useSetCustomerBan = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getSetCustomerBanMutationOptions(options));
+    }
+
+export const getSetCustomerRoleUrl = (id: string,) => {
+
+
+
+
+  return `/api/admin/customers/${id}/role`
+}
+
+/**
+ * @summary Grant or remove admin access for an account
+ */
+export const setCustomerRole = async (id: string,
+    customerRoleInput: CustomerRoleInput, options?: Parameters<typeof customFetch>[1]): Promise<Customer> => {
+
+  return customFetch<Customer>(getSetCustomerRoleUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(customerRoleInput)
+  }
+);}
+
+
+
+
+
+export const getSetCustomerRoleMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setCustomerRole>>, TError,{id: string;data: BodyType<CustomerRoleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setCustomerRole>>, TError,{id: string;data: BodyType<CustomerRoleInput>}, TContext> => {
+
+const mutationKey = ['setCustomerRole'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setCustomerRole>>, {id: string;data: BodyType<CustomerRoleInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  setCustomerRole(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetCustomerRoleMutationResult = NonNullable<Awaited<ReturnType<typeof setCustomerRole>>>
+    export type SetCustomerRoleMutationBody = BodyType<CustomerRoleInput>
+    export type SetCustomerRoleMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Grant or remove admin access for an account
+ */
+export const useSetCustomerRole = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setCustomerRole>>, TError,{id: string;data: BodyType<CustomerRoleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setCustomerRole>>,
+        TError,
+        {id: string;data: BodyType<CustomerRoleInput>},
+        TContext
+      > => {
+      return useMutation(getSetCustomerRoleMutationOptions(options));
     }
 
 export const getUpdateCustomerRestrictionsUrl = (id: string,) => {

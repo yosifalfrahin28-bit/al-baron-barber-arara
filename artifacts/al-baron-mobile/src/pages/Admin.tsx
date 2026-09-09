@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'wouter';
-import { ShieldAlert, ShieldX, ChevronLeft, Tv, QrCode, MapPin, Clock, CheckCircle, FileEdit, X, PlusCircle, ArrowRight, ScanLine, CalendarIcon, MessageCircle, Send, ExternalLink, Power, Pencil, Ban, Trash2, Search, KeyRound, Package, Store, UsersRound, MessageSquareHeart, Star } from 'lucide-react';
+import { ShieldAlert, ShieldX, ShieldCheck, ChevronLeft, Tv, QrCode, MapPin, Clock, CheckCircle, FileEdit, X, PlusCircle, ArrowRight, ScanLine, CalendarIcon, MessageCircle, Send, ExternalLink, Power, Pencil, Ban, Trash2, Search, KeyRound, Package, Store, UsersRound, MessageSquareHeart, Star } from 'lucide-react';
 import { useSalon, type AgeCategory, type Product, type ShopInfo } from '@/context/SalonContext';
 import { usePhoneAuth } from '@/context/AuthContext';
 import { getListAdminCustomersQueryKey, type Appointment, type Customer, type Service, type ScheduleSlot, useListAdminCustomers } from '@workspace/api-client-react';
@@ -408,6 +408,22 @@ export default function Admin() {
     setCustomerActionPending(true);
     try {
       await sessionJson(`/api/admin/customers/${customer.id}/ban`, 'PATCH', { banned: !customer.banned, reason });
+      await customersQuery.refetch();
+    } catch (error) {
+      setCustomerError(getActionError(error));
+    } finally {
+      setCustomerActionPending(false);
+    }
+  };
+
+  const toggleCustomerRole = async (customer: Customer) => {
+    const nextRole = customer.role === 'admin' ? 'client' : 'admin';
+    const action = nextRole === 'admin' ? 'منح صلاحية أدمن' : 'إزالة صلاحية أدمن';
+    if (!window.confirm(`${action} للحساب ${customer.name}؟`)) return;
+    setCustomerError('');
+    setCustomerActionPending(true);
+    try {
+      await sessionJson(`/api/admin/customers/${customer.id}/role`, 'PATCH', { role: nextRole });
       await customersQuery.refetch();
     } catch (error) {
       setCustomerError(getActionError(error));
@@ -1013,6 +1029,7 @@ export default function Admin() {
                   <div className="min-w-0 flex-1 text-right">
                     <div className="flex flex-row-reverse items-center gap-2">
                       <span className="truncate text-sm font-black text-foreground">{customer.name}</span>
+                       {customer.role === 'admin' && <StatusPill>أدمن</StatusPill>}
                       {customer.banned && <StatusPill>محظور</StatusPill>}
                     </div>
                     <div className="mt-1 text-xs text-muted-foreground" dir="ltr">{customer.phone}</div>
@@ -1038,6 +1055,15 @@ export default function Admin() {
                     حذف الحساب
                   </button>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => { void toggleCustomerRole(customer); }}
+                  disabled={customerActionPending || customer.id === user?.id}
+                  className={cn("mt-2 flex h-10 w-full flex-row-reverse items-center justify-center gap-2 rounded-xl border text-xs font-black transition-colors disabled:cursor-not-allowed disabled:opacity-50", customer.role === 'admin' ? "border-amber-500/30 text-amber-300 hover:bg-amber-500/10" : "border-primary/30 text-primary hover:bg-primary/10")}
+                >
+                  <ShieldCheck size={15} />
+                  {customer.id === user?.id ? 'أنت الأدمن الحالي' : customer.role === 'admin' ? 'إزالة صلاحية الأدمن' : 'منح صلاحية أدمن'}
+                </button>
                  <div className="mt-3 rounded-2xl border border-border bg-secondary/30 p-3">
                    <label className="flex flex-row-reverse items-center justify-between gap-3 text-xs font-bold text-foreground">
                      <span>تقييد الحجز لهذا الحساب</span>

@@ -192,6 +192,18 @@ export interface CustomerBanInput {
   reason?: string;
 }
 
+export type CustomerRoleInputRole = typeof CustomerRoleInputRole[keyof typeof CustomerRoleInputRole];
+
+
+export const CustomerRoleInputRole = {
+  admin: 'admin',
+  client: 'client',
+} as const;
+
+export interface CustomerRoleInput {
+  role: CustomerRoleInputRole;
+}
+
 export interface CustomerRestrictionsInput {
   bookingRestricted: boolean;
   /** @maxLength 500 */
