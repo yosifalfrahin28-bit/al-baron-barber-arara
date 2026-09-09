@@ -28,11 +28,14 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 async function readError(response: Response) {
+  const responseText = await response.text();
   try {
-    const body = await response.json() as { message?: string };
+    const body = JSON.parse(responseText) as { message?: string };
     return body.message || 'تعذر إكمال العملية';
   } catch {
-    return 'تعذر إكمال العملية';
+    return response.status === 503
+      ? 'الخدمة غير متاحة حالياً، يرجى المحاولة بعد قليل'
+      : 'تعذر إكمال العملية';
   }
 }
 

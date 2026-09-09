@@ -367,7 +367,18 @@ router.post("/auth/password-reset/request", async (req, res, next) => {
       return res.status(404).json({ code: "PHONE_NOT_REGISTERED", message: "الرقم غير مسجل، يرجى إنشاء حساب" });
     }
     const challenge = await createPhoneChallenge(phone, user.name);
-    const delivery = await sendPhoneCode(phone, challenge.id, "password-reset");
+    let delivery;
+    try {
+      delivery = await sendPhoneCode(phone, challenge.id, "password-reset");
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("WhatsApp is not connected")) {
+        return res.status(503).json({
+          code: "WHATSAPP_NOT_CONNECTED",
+          message: "WhatsApp غير متصل حالياً. يرجى ربط WhatsApp من رمز QR أولاً ثم إعادة المحاولة.",
+        });
+      }
+      throw error;
+    }
     return res.status(202).json({
       message: delivery.delivered ? "Password reset code sent" : "development verification code generated",
       devOtp: delivery.devOtp,
