@@ -243,6 +243,14 @@ export interface Ticket {
   createdAt: string;
 }
 
+export type AppointmentInputPaymentMethod = typeof AppointmentInputPaymentMethod[keyof typeof AppointmentInputPaymentMethod];
+
+
+export const AppointmentInputPaymentMethod = {
+  bit: 'bit',
+  cash_at_shop: 'cash_at_shop',
+} as const;
+
 export interface AppointmentInput {
   date: string;
   time: string;
@@ -253,7 +261,22 @@ export interface AppointmentInput {
      * @maximum 8
      */
   guestCount?: number;
+  /**
+     * @minItems 1
+     * @maxItems 8
+     * @items.minLength 1
+     */
+  participantCategories?: string[];
+  paymentMethod?: AppointmentInputPaymentMethod;
 }
+
+export type AppointmentPaymentMethod = typeof AppointmentPaymentMethod[keyof typeof AppointmentPaymentMethod];
+
+
+export const AppointmentPaymentMethod = {
+  bit: 'bit',
+  cash_at_shop: 'cash_at_shop',
+} as const;
 
 export interface Appointment {
   id: string;
@@ -265,6 +288,9 @@ export interface Appointment {
   service: string;
   /** @minimum 1 */
   guestCount: number;
+  /** @minItems 1 */
+  participantCategories: string[];
+  paymentMethod: AppointmentPaymentMethod;
   status: string;
   confirmationSent: boolean;
   reminderSent: boolean;

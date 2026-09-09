@@ -943,9 +943,18 @@ components:
         barber: { type: string }
         service: { type: string }
         guestCount: { type: integer, minimum: 1, maximum: 8, default: 1 }
+        participantCategories:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items: { type: string, minLength: 1 }
+        paymentMethod:
+          type: string
+          enum: [bit, cash_at_shop]
+          default: bit
     Appointment:
       type: object
-      required: [id, name, phone, date, time, barber, service, guestCount, status, confirmationSent, reminderSent, reminderOneHourSent, reminderTwentyMinuteSent, reviewRequestSent, createdAt]
+      required: [id, name, phone, date, time, barber, service, guestCount, participantCategories, paymentMethod, status, confirmationSent, reminderSent, reminderOneHourSent, reminderTwentyMinuteSent, reviewRequestSent, createdAt]
       properties:
         id: { type: string }
         name: { type: string }
@@ -955,6 +964,13 @@ components:
         barber: { type: string }
         service: { type: string }
         guestCount: { type: integer, minimum: 1 }
+        participantCategories:
+          type: array
+          minItems: 1
+          items: { type: string }
+        paymentMethod:
+          type: string
+          enum: [bit, cash_at_shop]
         status: { type: string }
         confirmationSent: { type: boolean }
         reminderSent: { type: boolean }

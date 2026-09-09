@@ -71,7 +71,7 @@ type SalonContextValue = {
   setProfile: (profile: LocalProfile) => void;
   setSelectedStyle: (style: string | null) => void;
   joinQueue: (service: string, barber: string, ageCategory?: string) => Promise<void>;
-  bookAppointment: (details: { date: string; time: string; barber: string; service: string; ageCategory?: string; guestCount?: number }) => Promise<void>;
+  bookAppointment: (details: { date: string; time: string; barber: string; service: string; ageCategory?: string; guestCount?: number; participantCategories?: string[]; paymentMethod?: 'bit' | 'cash_at_shop' }) => Promise<void>;
   advanceQueue: () => Promise<void>;
   cancelTicket: (id?: string, source?: 'account' | 'admin') => void;
   addWalkIn: (name: string) => void;
@@ -159,7 +159,7 @@ export function SalonProvider({ children }: { children: ReactNode }) {
     await refreshState();
   };
   
-  const bookAppointment = async (details: { date: string; time: string; barber: string; service: string; ageCategory?: string; guestCount?: number }): Promise<void> => {
+  const bookAppointment = async (details: { date: string; time: string; barber: string; service: string; ageCategory?: string; guestCount?: number; participantCategories?: string[]; paymentMethod?: 'bit' | 'cash_at_shop' }): Promise<void> => {
     const selectedService = services.find((item) => item.name === details.service);
     const createdAppointment = await sessionJson<Appointment>('/api/appointments', 'POST', details);
     queryClient.setQueryData<SalonState>(getGetSalonStateQueryKey(), (current) => current ? {
@@ -167,7 +167,7 @@ export function SalonProvider({ children }: { children: ReactNode }) {
       appointments: [createdAppointment, ...current.appointments],
     } : current);
     trackEvent('appointment_booked', {
-      service_duration_minutes: (selectedService?.duration ?? 0) + Math.max(0, (details.guestCount ?? 1) - 1) * 20,
+      service_duration_minutes: selectedService?.duration ?? 0,
       barber_choice: barberCategory(details.barber),
       booking_horizon: details.date === 'اليوم' ? 'today' : 'future',
       has_style_reference: Boolean(selectedStyle),

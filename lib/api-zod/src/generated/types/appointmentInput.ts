@@ -5,6 +5,7 @@
  * Shared Al-Baron Barber Shop API
  * OpenAPI spec version: 0.2.0
  */
+import type { AppointmentInputPaymentMethod } from './appointmentInputPaymentMethod';
 
 export interface AppointmentInput {
   date: string;
@@ -16,4 +17,11 @@ export interface AppointmentInput {
      * @maximum 8
      */
   guestCount?: number;
+  /**
+     * @minItems 1
+     * @maxItems 8
+     * @items.minLength 1
+     */
+  participantCategories?: string[];
+  paymentMethod?: AppointmentInputPaymentMethod;
 }

@@ -779,6 +779,11 @@ export default function Admin() {
                     <div className="text-sm font-black text-foreground">{appointment.name}</div>
                     <div className="mt-1 text-xs text-muted-foreground">{appointment.date} · {appointment.time}</div>
                     <div className="mt-1 text-[11px] text-muted-foreground">{appointment.service} · {appointment.barber} · {appointment.phone}</div>
+                    <div className="mt-1 text-[11px] text-muted-foreground">
+                      {appointment.participantCategories?.join('، ') ?? appointment.guestCount + ' أشخاص'}
+                      {' · '}
+                      {appointment.paymentMethod === 'bit' ? 'الدفع عبر bit' : 'كاش عند الحلاق'}
+                    </div>
                   </div>
                   <StatusPill positive={appointment.status === 'confirmed'}>
                     {appointment.status === 'cancelled' ? 'ملغى' : appointment.status === 'completed' ? 'مكتمل' : 'مؤكد'}

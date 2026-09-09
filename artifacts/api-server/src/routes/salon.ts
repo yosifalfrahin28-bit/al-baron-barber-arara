@@ -169,6 +169,23 @@ function mapTicket(ticket: typeof salonTickets.$inferSelect, queuePosition = 0, 
 }
 
 function mapAppointment(appointment: typeof salonAppointments.$inferSelect) {
+  let participantCategories = Array.from(
+    { length: Math.max(1, appointment.guestCount) },
+    (_, index) => index === 0 ? appointment.ageCategory : "بالغون",
+  );
+  try {
+    const parsed = JSON.parse(appointment.participantCategories);
+    if (
+      Array.isArray(parsed)
+      && parsed.every((item) => typeof item === "string")
+      && parsed.length > 0
+      && (parsed.length === appointment.guestCount || appointment.guestCount === 1)
+    ) {
+      participantCategories = parsed;
+    }
+  } catch {
+    // Older rows fall back to their original age category.
+  }
   return {
     id: appointment.id,
     name: appointment.name,
@@ -179,6 +196,8 @@ function mapAppointment(appointment: typeof salonAppointments.$inferSelect) {
     service: appointment.service,
     ageCategory: appointment.ageCategory,
     guestCount: appointment.guestCount,
+    participantCategories,
+    paymentMethod: appointment.paymentMethod,
     status: appointment.status,
     confirmationSent: appointment.confirmationSent,
     reminderSent: appointment.reminderSent,
@@ -220,11 +239,19 @@ function isAppointmentTooSoon(date: string, requestedStart: number) {
 
 function appointmentDurationMinutes(
   serviceName: string,
-  guestCount: number,
+  participantCategories: string[],
   serviceDurations: Map<string, number>,
 ) {
   const baseDuration = serviceDurations.get(serviceName) ?? 30;
-  return baseDuration + Math.max(0, guestCount - 1) * 20;
+  const extraDuration = participantCategories
+    .slice(1)
+    .reduce((total, category) => {
+      const normalized = category.toLowerCase();
+      if (normalized.includes("طف") || normalized.includes("child")) return total + 10;
+      if (normalized.includes("شب") || normalized.includes("teen")) return total + 20;
+      return total + 25;
+    }, 0);
+  return baseDuration + extraDuration;
 }
 
 class AppointmentTimeUnavailableError extends Error {
@@ -949,7 +976,23 @@ router.post("/appointments", requireAuth, requireBookingAccess, async (req, res,
     const barber = text(req.body?.barber, "أول حلاق متاح");
     const service = text(req.body?.service, "قص شعر مودرن");
     const ageCategory = text(req.body?.ageCategory, "بالغون");
-    const guestCount = Math.min(8, Math.max(1, number(req.body?.guestCount, 1)));
+    const rawParticipantCategories = req.body?.participantCategories;
+    if (rawParticipantCategories !== undefined && (
+      !Array.isArray(rawParticipantCategories)
+      || rawParticipantCategories.length < 1
+      || rawParticipantCategories.length > 8
+      || rawParticipantCategories.some((category: unknown) => typeof category !== "string" || !category.trim())
+    )) {
+      return res.status(400).json({ message: "قائمة الأشخاص غير صالحة" });
+    }
+    const participantCategories = Array.isArray(rawParticipantCategories)
+      ? rawParticipantCategories.map((category: string) => category.trim())
+      : Array.from({ length: Math.min(8, Math.max(1, number(req.body?.guestCount, 1))) }, (_, index) => index === 0 ? ageCategory : "بالغون");
+    const guestCount = participantCategories.length;
+    const paymentMethod = text(req.body?.paymentMethod, "bit");
+    if (!["bit", "cash_at_shop"].includes(paymentMethod)) {
+      return res.status(400).json({ message: "طريقة الدفع غير صالحة" });
+    }
     const requestedStart = parseTimeMinutes(time);
     if (requestedStart === null || date === "اليوم") {
       return res.status(400).json({ message: "تاريخ ووقت الحجز غير صالحين" });
@@ -968,12 +1011,29 @@ router.post("/appointments", requireAuth, requireBookingAccess, async (req, res,
         tx.select().from(salonAppointments).where(eq(salonAppointments.date, date)),
       ]);
       const serviceDurations = new Map(services.map((item) => [item.name, item.duration]));
-      const requestedEnd = requestedStart + appointmentDurationMinutes(service, guestCount, serviceDurations);
+      const requestedEnd = requestedStart + appointmentDurationMinutes(service, participantCategories, serviceDurations);
       const overlaps = existingAppointments.some((existing) => {
         if (existing.status === "cancelled") return false;
         const existingStart = parseTimeMinutes(existing.time);
         if (existingStart === null) return false;
-        const existingEnd = existingStart + appointmentDurationMinutes(existing.service, existing.guestCount, serviceDurations);
+        let existingParticipants = Array.from(
+          { length: Math.max(1, existing.guestCount) },
+          (_, index) => index === 0 ? existing.ageCategory : "بالغون",
+        );
+        try {
+          const parsed = JSON.parse(existing.participantCategories);
+          if (
+            Array.isArray(parsed)
+            && parsed.every((item) => typeof item === "string")
+            && parsed.length > 0
+            && (parsed.length === existing.guestCount || existing.guestCount === 1)
+          ) {
+            existingParticipants = parsed;
+          }
+        } catch {
+          // Older rows use the original single-person duration.
+        }
+        const existingEnd = existingStart + appointmentDurationMinutes(existing.service, existingParticipants, serviceDurations);
         return requestedStart < existingEnd && existingStart < requestedEnd;
       });
       if (overlaps) throw new AppointmentTimeUnavailableError();
@@ -989,6 +1049,8 @@ router.post("/appointments", requireAuth, requireBookingAccess, async (req, res,
         service,
         ageCategory,
         guestCount,
+        participantCategories: JSON.stringify(participantCategories),
+        paymentMethod,
         status: "confirmed",
       }).returning();
     }).catch((error) => {

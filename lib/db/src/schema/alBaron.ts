@@ -173,6 +173,8 @@ export const salonAppointments = pgTable("salon_appointments", {
   service: text("service").notNull(),
   ageCategory: text("age_category").notNull().default("بالغ"),
   guestCount: integer("guest_count").notNull().default(1),
+  participantCategories: text("participant_categories").notNull().default("[\"بالغون\"]"),
+  paymentMethod: text("payment_method").notNull().default("bit"),
   status: text("status").notNull().default("confirmed"),
   confirmationSent: boolean("confirmation_sent").notNull().default(false),
   reminderSent: boolean("reminder_sent").notNull().default(false),

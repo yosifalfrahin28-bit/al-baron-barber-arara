@@ -5,6 +5,7 @@
  * Shared Al-Baron Barber Shop API
  * OpenAPI spec version: 0.2.0
  */
+import type { AppointmentPaymentMethod } from './appointmentPaymentMethod';
 
 export interface Appointment {
   id: string;
@@ -16,6 +17,9 @@ export interface Appointment {
   service: string;
   /** @minimum 1 */
   guestCount: number;
+  /** @minItems 1 */
+  participantCategories: string[];
+  paymentMethod: AppointmentPaymentMethod;
   status: string;
   confirmationSent: boolean;
   reminderSent: boolean;

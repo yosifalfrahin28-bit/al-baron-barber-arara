@@ -28,6 +28,7 @@ export const getSalonStateResponseWaitingTicketsItemQueuePositionMin = 0;
 export const getSalonStateResponseWaitingTicketsItemPeopleAheadMin = 0;
 
 
+
 export const getSalonStateResponseScheduleItemOneDayOfWeekMin = 0;
 export const getSalonStateResponseScheduleItemOneDayOfWeekMax = 6;
 
@@ -82,6 +83,8 @@ export const GetSalonStateResponse = zod.object({
   "barber": zod.string(),
   "service": zod.string(),
   "guestCount": zod.number().int().min(1),
+  "participantCategories": zod.array(zod.string()).min(1),
+  "paymentMethod": zod.enum(['bit', 'cash_at_shop']),
   "status": zod.string(),
   "confirmationSent": zod.boolean(),
   "reminderSent": zod.boolean(),
@@ -281,6 +284,7 @@ export const GetBroadcastRecipientCountResponse = zod.object({
 
 
 
+
 export const ListAdminAppointmentsResponseItem = zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -290,6 +294,8 @@ export const ListAdminAppointmentsResponseItem = zod.object({
   "barber": zod.string(),
   "service": zod.string(),
   "guestCount": zod.number().int().min(1),
+  "participantCategories": zod.array(zod.string()).min(1),
+  "paymentMethod": zod.enum(['bit', 'cash_at_shop']),
   "status": zod.string(),
   "confirmationSent": zod.boolean(),
   "reminderSent": zod.boolean(),
@@ -675,6 +681,7 @@ export const ListAppointmentsQueryParams = zod.object({
 
 
 
+
 export const ListAppointmentsResponseItem = zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -684,6 +691,8 @@ export const ListAppointmentsResponseItem = zod.object({
   "barber": zod.string(),
   "service": zod.string(),
   "guestCount": zod.number().int().min(1),
+  "participantCategories": zod.array(zod.string()).min(1),
+  "paymentMethod": zod.enum(['bit', 'cash_at_shop']),
   "status": zod.string(),
   "confirmationSent": zod.boolean(),
   "reminderSent": zod.boolean(),
@@ -699,14 +708,20 @@ export const createAppointmentBodyGuestCountDefault = 1;
 export const createAppointmentBodyGuestCountMax = 8;
 
 
+export const createAppointmentBodyParticipantCategoriesMax = 8;
+
+export const createAppointmentBodyPaymentMethodDefault = `bit`;
 
 export const CreateAppointmentBody = zod.object({
   "date": zod.string(),
   "time": zod.string(),
   "barber": zod.string(),
   "service": zod.string(),
-  "guestCount": zod.number().int().min(1).max(createAppointmentBodyGuestCountMax).default(createAppointmentBodyGuestCountDefault)
+  "guestCount": zod.number().int().min(1).max(createAppointmentBodyGuestCountMax).default(createAppointmentBodyGuestCountDefault),
+  "participantCategories": zod.array(zod.string().min(1)).min(1).max(createAppointmentBodyParticipantCategoriesMax).optional(),
+  "paymentMethod": zod.enum(['bit', 'cash_at_shop']).default(createAppointmentBodyPaymentMethodDefault)
 })
+
 
 
 
@@ -720,6 +735,8 @@ export const CreateAppointmentResponse = zod.object({
   "barber": zod.string(),
   "service": zod.string(),
   "guestCount": zod.number().int().min(1),
+  "participantCategories": zod.array(zod.string()).min(1),
+  "paymentMethod": zod.enum(['bit', 'cash_at_shop']),
   "status": zod.string(),
   "confirmationSent": zod.boolean(),
   "reminderSent": zod.boolean(),
@@ -780,6 +797,7 @@ export const CancelAppointmentBody = zod.object({
 
 
 
+
 export const CancelAppointmentResponse = zod.object({
   "appointment": zod.object({
   "id": zod.string(),
@@ -790,6 +808,8 @@ export const CancelAppointmentResponse = zod.object({
   "barber": zod.string(),
   "service": zod.string(),
   "guestCount": zod.number().int().min(1),
+  "participantCategories": zod.array(zod.string()).min(1),
+  "paymentMethod": zod.enum(['bit', 'cash_at_shop']),
   "status": zod.string(),
   "confirmationSent": zod.boolean(),
   "reminderSent": zod.boolean(),

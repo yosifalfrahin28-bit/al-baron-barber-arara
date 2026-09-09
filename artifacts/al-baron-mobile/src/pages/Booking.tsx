@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, ArrowRight, CalendarDays, CheckCircle2, ChevronLeft, Crown, Info, Lock, Minus, Plus, Users, Zap } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CalendarDays, CheckCircle2, ChevronLeft, Crown, Info, Lock, Plus, Users, Zap } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { useSalon } from '@/context/SalonContext';
 import { usePhoneAuth } from '@/context/AuthContext';
@@ -12,6 +12,16 @@ type BookingMode = 'queue' | 'appointment';
 const barbers = ['أول حلاق متاح', 'سامر', 'فادي'];
 const namedDays = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 const salonTimeZone = 'Asia/Jerusalem';
+const paymentMethods = [
+  { id: 'bit' as const, label: 'الدفع عبر bit', description: 'تحويل مباشر من تطبيق bit' },
+  { id: 'cash_at_shop' as const, label: 'كاش عند الحلاق', description: 'الدفع عند الوصول' },
+];
+
+function additionalMinutesForCategory(category: string) {
+  if (category.includes('طف') || category.toLowerCase().includes('child')) return 10;
+  if (category.includes('شب') || category.toLowerCase().includes('teen')) return 20;
+  return 25;
+}
 
 function salonDateKey(date: Date) {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -58,8 +68,8 @@ export default function Booking() {
   const [step, setStep] = useState<BookingStep>(1);
   const [mode, setMode] = useState<BookingMode>(() => new URLSearchParams(window.location.search).get('mode') === 'appointment' ? 'appointment' : 'queue');
   const [serviceId, setServiceId] = useState('haircut');
-  const [ageCategory, setAgeCategory] = useState('بالغون');
-  const [guestCount, setGuestCount] = useState(1);
+  const [participantCategories, setParticipantCategories] = useState<string[]>(['بالغون']);
+  const [paymentMethod, setPaymentMethod] = useState<'bit' | 'cash_at_shop'>('bit');
   const [barber, setBarber] = useState('أول حلاق متاح');
   const [dayOffset, setDayOffset] = useState(0);
   const [time, setTime] = useState('');
@@ -85,7 +95,8 @@ export default function Booking() {
     .map((slot) => slot.time)
     .filter((slot, index, slots) => slots.indexOf(slot) === index)
     .sort(), [schedule, selectedDay]);
-  const selectedDuration = (selectedService?.duration ?? 30) + Math.max(0, guestCount - 1) * 20;
+  const selectedDuration = (selectedService?.duration ?? 30)
+    + participantCategories.slice(1).reduce((total, category) => total + additionalMinutesForCategory(category), 0);
   const todayKey = salonDateKey(new Date(nowTick));
   const currentSalonMinutes = salonMinutes(new Date(nowTick));
   const availableTimes = useMemo(() => {
@@ -101,7 +112,7 @@ export default function Booking() {
         if (appointment.date !== selectedDay?.date || appointment.status === 'cancelled') return false;
         const existingStart = toMinutes(appointment.time);
         const existingDuration = (services.find((service) => service.name === appointment.service)?.duration ?? 30)
-          + Math.max(0, (appointment.guestCount ?? 1) - 1) * 20;
+          + (appointment.participantCategories?.slice(1).reduce((total, category) => total + additionalMinutesForCategory(category), 0) ?? Math.max(0, (appointment.guestCount ?? 1) - 1) * 25);
         return candidateStart < existingStart + existingDuration && existingStart < candidateEnd;
       });
     });
@@ -132,10 +143,10 @@ export default function Booking() {
   }, [serviceId, visibleServices]);
 
   useEffect(() => {
-    if (ageCategories.length > 0 && !ageCategories.some((category) => category.name === ageCategory)) {
-      setAgeCategory(ageCategories[0].name);
+    if (ageCategories.length > 0 && !ageCategories.some((category) => category.name === participantCategories[0])) {
+      setParticipantCategories((current) => [ageCategories[0].name, ...current.slice(1)]);
     }
-  }, [ageCategories, ageCategory]);
+  }, [ageCategories, participantCategories]);
 
   useEffect(() => {
     if (availableTimes.length > 0 && !availableTimes.includes(time)) {
@@ -168,7 +179,7 @@ export default function Booking() {
   const canContinue = step === 1
     ? Boolean(selectedService)
     : step === 2
-      ? Boolean(barber && ageCategory)
+      ? Boolean(barber && participantCategories[0])
       : mode === 'queue' || Boolean(time);
 
   const nextStep = () => {
@@ -192,9 +203,18 @@ export default function Booking() {
     setErrorMessage('');
     try {
       if (mode === 'queue') {
-        await joinQueue(selectedService.name, barber, ageCategory);
+        await joinQueue(selectedService.name, barber, participantCategories[0]);
       } else {
-        await bookAppointment({ date: selectedDay.date, time, barber, service: selectedService.name, ageCategory, guestCount });
+        await bookAppointment({
+          date: selectedDay.date,
+          time,
+          barber,
+          service: selectedService.name,
+          ageCategory: participantCategories[0],
+          guestCount: participantCategories.length,
+          participantCategories,
+          paymentMethod,
+        });
       }
       setIsComplete(true);
     } catch (error) {
@@ -389,8 +409,8 @@ export default function Booking() {
                   <button
                     type="button"
                     key={category.id}
-                    onClick={() => setAgeCategory(category.name)}
-                    className={cn('rounded-xl border px-3 py-3 text-right transition-colors', ageCategory === category.name ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-card text-foreground')}
+                    onClick={() => setParticipantCategories((current) => [category.name, ...current.slice(1)])}
+                    className={cn('rounded-xl border px-3 py-3 text-right transition-colors', participantCategories[0] === category.name ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-card text-foreground')}
                   >
                     <span className="block text-sm font-bold">{category.name}</span>
                     <span className="mt-1 block text-[10px] text-muted-foreground">
@@ -400,6 +420,7 @@ export default function Booking() {
                 ))}
               </div>
             </div>
+            {mode === 'appointment' && (
             <div className="mt-6 rounded-2xl border border-primary/20 bg-primary/5 p-4">
               <div className="flex flex-row-reverse items-center gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/15">
@@ -407,35 +428,69 @@ export default function Booking() {
                 </div>
                 <div className="flex-1 text-right">
                   <h3 className="text-sm font-bold text-foreground">لمن يكون الحجز؟</h3>
-                  <p className="mt-1 text-[11px] leading-5 text-muted-foreground">الشخص الأول أنت، وكل شخص إضافي يزيد 20 دقيقة على الموعد.</p>
+                  <p className="mt-1 text-[11px] leading-5 text-muted-foreground">حدد فئة كل شخص؛ البالغ +25، الطفل +10، والشاب +20 دقيقة.</p>
                 </div>
               </div>
-              <div className="mt-4 flex items-center justify-between rounded-xl border border-border bg-card p-2">
+              <div className="mt-4 space-y-3">
+                {participantCategories.map((category, index) => (
+                  <div key={`${index}-${category}`} className="rounded-xl border border-border bg-card p-3">
+                    <div className="mb-2 flex flex-row-reverse items-center justify-between">
+                      <span className="text-xs font-bold text-foreground">{index === 0 ? 'الشخص الأول (أنت)' : `الشخص ${index + 1}`}</span>
+                      {index > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setParticipantCategories((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                          className="text-[11px] font-bold text-destructive"
+                        >
+                          إزالة
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {ageCategories.map((categoryOption) => (
+                        <button
+                          key={categoryOption.id}
+                          type="button"
+                          onClick={() => setParticipantCategories((current) => current.map((item, itemIndex) => itemIndex === index ? categoryOption.name : item))}
+                          className={cn('rounded-lg border px-2 py-2 text-right text-xs font-bold', category === categoryOption.name ? 'border-primary bg-primary/10 text-primary' : 'border-border text-foreground')}
+                        >
+                          {categoryOption.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
                 <button
                   type="button"
-                  onClick={() => setGuestCount((current) => Math.max(1, current - 1))}
-                  disabled={guestCount <= 1}
-                  aria-label="إنقاص عدد الأشخاص"
-                  className="flex h-10 w-10 items-center justify-center rounded-lg bg-secondary text-foreground disabled:opacity-40"
+                  disabled={participantCategories.length >= 8}
+                  onClick={() => setParticipantCategories((current) => [...current, ageCategories.find((category) => category.name.includes('بالغ'))?.name ?? 'بالغون'])}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-primary/50 px-3 py-3 text-xs font-bold text-primary disabled:opacity-40"
                 >
-                  <Minus size={17} />
-                </button>
-                <div className="text-center">
-                  <div className="text-lg font-black text-primary">{guestCount}</div>
-                  <div className="text-[10px] text-muted-foreground">{guestCount === 1 ? 'شخص واحد' : `${guestCount} أشخاص`}</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setGuestCount((current) => Math.min(8, current + 1))}
-                  disabled={guestCount >= 8}
-                  aria-label="زيادة عدد الأشخاص"
-                  className="flex h-10 w-10 items-center justify-center rounded-lg bg-secondary text-foreground disabled:opacity-40"
-                >
-                  <Plus size={17} />
+                  <Plus size={15} />
+                  إضافة شخص
                 </button>
               </div>
               <p className="mt-2 text-center text-[10px] font-bold text-primary">مدة الخدمة المتوقعة: {selectedDuration} دقيقة</p>
             </div>
+            )}
+            {mode === 'appointment' && (
+              <div className="mt-6">
+                <h3 className="mb-3 text-right text-sm font-bold text-foreground">طريقة الدفع</h3>
+                <div className="grid grid-cols-2 gap-2.5">
+                  {paymentMethods.map((method) => (
+                    <button
+                      key={method.id}
+                      type="button"
+                      onClick={() => setPaymentMethod(method.id)}
+                      className={cn('rounded-xl border p-3 text-right', paymentMethod === method.id ? 'border-primary bg-primary/10' : 'border-border bg-card')}
+                    >
+                      <span className="block text-sm font-bold text-foreground">{method.label}</span>
+                      <span className="mt-1 block text-[10px] text-muted-foreground">{method.description}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {mode === 'appointment' && (
               <div className="mt-6">
                 <h3 className="mb-3 text-right text-sm font-bold text-foreground">اليوم</h3>
@@ -541,16 +596,28 @@ export default function Booking() {
               </div>
               <div className="flex flex-row-reverse items-center justify-between p-4">
                 <span className="text-xs text-muted-foreground">الفئة العمرية</span>
-                <span className="text-sm font-bold text-foreground">{ageCategory}</span>
+                <span className="text-sm font-bold text-foreground">{participantCategories[0]}</span>
               </div>
               <div className="flex flex-row-reverse items-center justify-between p-4">
                 <span className="text-xs text-muted-foreground">عدد الأشخاص</span>
-                <span className="text-sm font-bold text-foreground">{guestCount}</span>
+                <span className="text-sm font-bold text-foreground">{participantCategories.length}</span>
               </div>
               <div className="flex flex-row-reverse items-center justify-between p-4">
                 <span className="text-xs text-muted-foreground">مدة الحجز</span>
                 <span className="text-sm font-bold text-primary">{selectedDuration} دقيقة</span>
               </div>
+              {mode === 'appointment' && (
+                <>
+                  <div className="flex flex-row-reverse items-start justify-between gap-4 p-4">
+                    <span className="text-xs text-muted-foreground">فئات الأشخاص</span>
+                    <span className="text-left text-sm font-bold text-foreground">{participantCategories.join('، ')}</span>
+                  </div>
+                  <div className="flex flex-row-reverse items-center justify-between p-4">
+                    <span className="text-xs text-muted-foreground">طريقة الدفع</span>
+                    <span className="text-sm font-bold text-primary">{paymentMethod === 'bit' ? 'عبر bit' : 'كاش عند الحلاق'}</span>
+                  </div>
+                </>
+              )}
               <div className="flex flex-row-reverse items-center justify-between p-4">
                 <span className="text-xs text-muted-foreground">نوع الزيارة</span>
                 <span className="text-sm font-bold text-primary">{mode === 'queue' ? 'دور حالي' : `${selectedDay.label} · ${time}`}</span>

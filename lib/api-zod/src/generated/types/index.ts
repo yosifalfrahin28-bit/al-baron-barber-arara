@@ -10,6 +10,8 @@ export * from './appointment';
 export * from './appointmentCancellationInput';
 export * from './appointmentCancellationResult';
 export * from './appointmentInput';
+export * from './appointmentInputPaymentMethod';
+export * from './appointmentPaymentMethod';
 export * from './broadcastInput';
 export * from './broadcastLink';
 export * from './broadcastRecipientCount';
