@@ -4,8 +4,10 @@ import makeWASocket, {
   type WASocket,
 } from "@whiskeysockets/baileys";
 import qrcode from "qrcode-terminal";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { db } from "@workspace/db";
+import { salonWhatsappAuthFiles } from "@workspace/db/schema";
 import { logger } from "../lib/logger";
 
 type WhatsAppConnectionState = "starting" | "qr" | "connected" | "disconnected";
@@ -21,6 +23,8 @@ let latestQr: string | null = null;
 let qrUpdatedAt: Date | null = null;
 let startPromise: Promise<void> | null = null;
 let reconnectTimer: NodeJS.Timeout | null = null;
+let authSyncTimer: NodeJS.Timeout | null = null;
+let authSyncPromise: Promise<void> | null = null;
 
 function toWhatsAppJid(phone: string) {
   const digits = phone.replace(/\D/g, "").replace(/^0+/, "972");
@@ -38,12 +42,70 @@ function scheduleReconnect() {
 async function resetLoggedOutSession() {
   try {
     await rm(authDir, { recursive: true, force: true });
+    await db.delete(salonWhatsappAuthFiles);
     logger.warn({ authDir }, "WhatsApp session cleared after logout; preparing a new QR code");
   } catch (error) {
     logger.error({ error, authDir }, "Could not clear the logged-out WhatsApp session");
   } finally {
     scheduleReconnect();
   }
+}
+
+function authFilePath(relativePath: string) {
+  const resolved = path.resolve(authDir, relativePath);
+  if (resolved !== authDir && !resolved.startsWith(`${authDir}${path.sep}`)) {
+    throw new Error("Invalid WhatsApp auth file path");
+  }
+  return resolved;
+}
+
+async function restoreAuthFiles() {
+  const storedFiles = await db.select().from(salonWhatsappAuthFiles);
+  for (const storedFile of storedFiles) {
+    const destination = authFilePath(storedFile.path);
+    await mkdir(path.dirname(destination), { recursive: true });
+    await writeFile(destination, storedFile.content, "utf8");
+  }
+  if (storedFiles.length > 0) {
+    logger.info({ authDir, fileCount: storedFiles.length }, "Restored WhatsApp session from persistent storage");
+  }
+}
+
+async function collectAuthFiles(directory: string, prefix = ""): Promise<Array<{ path: string; content: string }>> {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files: Array<{ path: string; content: string }> = [];
+  for (const entry of entries) {
+    const relativePath = prefix ? path.join(prefix, entry.name) : entry.name;
+    const absolutePath = authFilePath(relativePath);
+    if (entry.isDirectory()) {
+      files.push(...await collectAuthFiles(absolutePath, relativePath));
+    } else if (entry.isFile()) {
+      files.push({ path: relativePath, content: await readFile(absolutePath, "utf8") });
+    }
+  }
+  return files;
+}
+
+async function syncAuthFiles() {
+  if (authSyncPromise) return authSyncPromise;
+  authSyncPromise = (async () => {
+    const files = await collectAuthFiles(authDir);
+    if (files.length === 0) return;
+    await db.transaction(async (tx) => {
+      await tx.delete(salonWhatsappAuthFiles);
+      await tx.insert(salonWhatsappAuthFiles).values(files.map((file) => ({
+        path: file.path,
+        content: file.content,
+        updatedAt: new Date(),
+      })));
+    });
+    logger.debug({ authDir, fileCount: files.length }, "Persisted WhatsApp session files");
+  })().catch((error) => {
+    logger.error({ error, authDir }, "Could not persist WhatsApp session files");
+  }).finally(() => {
+    authSyncPromise = null;
+  });
+  return authSyncPromise;
 }
 
 export async function startWhatsApp() {
@@ -55,7 +117,11 @@ export async function startWhatsApp() {
   if (startPromise) return startPromise;
   startPromise = (async () => {
     await mkdir(authDir, { recursive: true });
+    await restoreAuthFiles();
     const { state: authState, saveCreds } = await useMultiFileAuthState(authDir);
+    if (!authSyncTimer) {
+      authSyncTimer = setInterval(() => void syncAuthFiles(), 5000);
+    }
     state = "starting";
     socket = makeWASocket({
       auth: authState,
@@ -65,7 +131,9 @@ export async function startWhatsApp() {
       logger: logger.child({ component: "whatsapp" }),
     });
 
-    socket.ev.on("creds.update", saveCreds);
+    socket.ev.on("creds.update", (update) => {
+      void saveCreds().then(() => syncAuthFiles());
+    });
     socket.ev.on("connection.update", ({ connection, lastDisconnect, qr }) => {
       if (qr) {
         state = "qr";

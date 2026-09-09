@@ -44,6 +44,12 @@ export const salonAuthChallenges = pgTable("salon_auth_challenges", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const salonWhatsappAuthFiles = pgTable("salon_whatsapp_auth_files", {
+  path: text("path").primaryKey(),
+  content: text("content").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const salonAuthSessions = pgTable("salon_auth_sessions", {
   id: text("id").primaryKey(),
   phone: text("phone").notNull(),
