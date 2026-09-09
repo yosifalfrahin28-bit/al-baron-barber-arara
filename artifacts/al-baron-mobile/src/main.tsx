@@ -243,6 +243,14 @@ function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-
                     className="mt-2 h-12 w-full rounded-xl border border-border bg-black/30 px-4 text-left text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
                   />
                 </label>
+                {mode === 'sign-in' && !resetMode && (
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-primary/25 bg-primary/10 px-3 py-2.5 text-right">
+                    <span className="text-xs font-bold text-muted-foreground">نسيت كلمة المرور؟</span>
+                    <button type="button" onClick={() => { setResetMode(true); setError(''); setNotice(''); setPassword(''); setPasswordConfirmation(''); }} className="shrink-0 rounded-lg bg-primary/15 px-3 py-2 text-xs font-black text-primary hover:bg-primary/25">
+                      تغيير كلمة المرور
+                    </button>
+                  </div>
+                )}
                 {(mode === 'sign-up' || resetMode) && (
                   <label className="block text-right text-sm font-bold text-foreground">
                     {resetMode ? 'تأكيد كلمة المرور الجديدة' : 'تأكيد كلمة المرور'}
@@ -268,11 +276,6 @@ function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-
                   </div>
                 )}
                 {error && <p className="rounded-xl bg-destructive/10 p-3 text-right text-xs text-destructive">{error}</p>}
-                {mode === 'sign-in' && !resetMode && (
-                  <button type="button" onClick={() => { setResetMode(true); setError(''); setNotice(''); setPassword(''); setPasswordConfirmation(''); }} className="w-full text-xs font-bold text-primary">
-                    نسيت كلمة المرور؟
-                  </button>
-                )}
                 <button disabled={submitting} className="h-14 w-full rounded-xl bg-primary font-black text-primary-foreground transition-opacity disabled:opacity-60">
                   {submitting ? (resetMode ? 'جارٍ إرسال رمز الاستعادة...' : mode === 'sign-in' ? 'جارٍ تسجيل الدخول...' : 'جارٍ إرسال رمز التحقق...') : resetMode ? 'إرسال رمز الاستعادة' : mode === 'sign-in' ? 'تسجيل الدخول' : 'إنشاء الحساب وإرسال الرمز'}
                 </button>
