@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import QRCode from "qrcode";
 import { LoaderCircle, MessageCircle, ShieldCheck } from "lucide-react";
 import { Card, Screen } from "@/components/SalonUI";
@@ -11,23 +11,22 @@ type WhatsAppSetupResponse = {
 };
 
 export default function WhatsAppSetup() {
-  const token = useMemo(() => new URLSearchParams(window.location.search).get("token") ?? "", []);
+  const tokenFromUrl = useMemo(() => new URLSearchParams(window.location.search).get("token") ?? "", []);
+  const [tokenInput, setTokenInput] = useState("");
+  const [activeToken, setActiveToken] = useState(tokenFromUrl);
   const [status, setStatus] = useState<WhatsAppSetupResponse["state"]>("starting");
   const [qrImage, setQrImage] = useState<string | null>(null);
   const [error, setError] = useState("");
   const lastQr = useRef("");
 
   useEffect(() => {
-    if (!token) {
-      setError("رابط الإعداد غير مكتمل.");
-      return;
-    }
+    if (!activeToken) return;
 
     let cancelled = false;
     const refresh = async () => {
       try {
         const response = await fetch(
-          apiUrl(`/api/whatsapp/setup-qr?token=${encodeURIComponent(token)}`),
+          apiUrl(`/api/whatsapp/setup-qr?token=${encodeURIComponent(activeToken)}`),
           { cache: "no-store" },
         );
         if (!response.ok) throw new Error("setup access denied");
@@ -59,9 +58,19 @@ export default function WhatsAppSetup() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [token]);
+  }, [activeToken]);
 
   const connected = status === "connected";
+  const submitToken = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const nextToken = tokenInput.trim();
+    if (!nextToken) {
+      setError("أدخل رمز إعداد WhatsApp أولاً.");
+      return;
+    }
+    setError("");
+    setActiveToken(nextToken);
+  };
 
   return (
     <Screen className="items-center justify-center p-5">
@@ -74,7 +83,25 @@ export default function WhatsAppSetup() {
           افتح WhatsApp في هاتفك، ثم الأجهزة المرتبطة، ثم ربط جهاز، وامسح الرمز الظاهر أدناه.
         </p>
 
-        {qrImage && !connected ? (
+        {!activeToken ? (
+          <form onSubmit={submitToken} className="mt-8 space-y-3 text-right">
+            <label className="block text-sm font-bold text-foreground">
+              رمز إعداد WhatsApp
+              <input
+                type="password"
+                value={tokenInput}
+                onChange={(event) => setTokenInput(event.target.value)}
+                placeholder="أدخل الرمز الذي وضعته في Render"
+                dir="ltr"
+                autoComplete="off"
+                className="mt-2 h-12 w-full rounded-xl border border-border bg-black/30 px-4 text-left text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
+              />
+            </label>
+            <button type="submit" className="h-12 w-full rounded-xl bg-primary font-black text-primary-foreground">
+              عرض رمز QR
+            </button>
+          </form>
+        ) : qrImage && !connected ? (
           <div className="mx-auto mt-6 w-fit rounded-2xl bg-white p-4 shadow-2xl">
             <img src={qrImage} alt="رمز QR لربط WhatsApp" className="block h-auto w-[min(82vw,420px)]" />
           </div>
@@ -92,8 +119,10 @@ export default function WhatsAppSetup() {
 
         {error ? (
           <p className="mt-5 rounded-xl bg-destructive/10 p-3 text-sm text-destructive">{error}</p>
-        ) : (
+        ) : activeToken ? (
           <p className="mt-5 text-xs text-muted-foreground">يتجدد الرمز تلقائياً كل عدة ثوانٍ.</p>
+        ) : (
+          <p className="mt-5 text-xs text-muted-foreground">الرمز موجود في Environment داخل Render.</p>
         )}
       </Card>
     </Screen>
