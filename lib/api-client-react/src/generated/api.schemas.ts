@@ -31,6 +31,21 @@ export interface PasswordLoginInput {
   password: string;
 }
 
+export interface PhoneInput {
+  phone: string;
+}
+
+export interface PasswordResetInput {
+  phone: string;
+  /**
+     * @minLength 4
+     * @maxLength 6
+     */
+  code: string;
+  /** @minLength 8 */
+  password: string;
+}
+
 export interface OtpDelivery {
   message: string;
   devOtp?: string;

@@ -118,6 +118,40 @@ paths:
                 $ref: "#/components/schemas/OtpDelivery"
         "401":
           description: Invalid phone or password
+  /auth/password-reset/request:
+    post:
+      operationId: requestPasswordReset
+      tags: [auth]
+      summary: Send a password reset code through WhatsApp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PhoneInput"
+      responses:
+        "202":
+          description: Password reset code sent
+        "404":
+          description: Phone is not registered
+  /auth/password-reset/confirm:
+    post:
+      operationId: confirmPasswordReset
+      tags: [auth]
+      summary: Confirm a password reset and create a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetInput"
+      responses:
+        "200":
+          description: Password reset and session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
   /auth/phone/verify-code:
     post:
       operationId: verifyPhoneCode
@@ -691,6 +725,18 @@ components:
       required: [phone, password]
       properties:
         phone: { type: string }
+        password: { type: string, minLength: 8 }
+    PhoneInput:
+      type: object
+      required: [phone]
+      properties:
+        phone: { type: string }
+    PasswordResetInput:
+      type: object
+      required: [phone, code, password]
+      properties:
+        phone: { type: string }
+        code: { type: string, minLength: 4, maxLength: 6 }
         password: { type: string, minLength: 8 }
     OtpDelivery:
       type: object

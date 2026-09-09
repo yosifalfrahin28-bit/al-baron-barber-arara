@@ -19,6 +19,8 @@ type AuthContextValue = {
   isLoading: boolean;
   requestCode: (phone: string, mode: 'sign-in' | 'sign-up', name?: string, password?: string) => Promise<string | null>;
   passwordLogin: (phone: string, password: string) => Promise<string | null>;
+  requestPasswordReset: (phone: string) => Promise<string | null>;
+  confirmPasswordReset: (phone: string, code: string, password: string) => Promise<PhoneAuthUser>;
   verifyCode: (phone: string, code: string) => Promise<PhoneAuthUser>;
   signOut: () => Promise<void>;
 };
@@ -87,6 +89,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     passwordLogin: async (phone, password) => {
       const response = await postJson<{ devOtp?: string }>(apiUrl('/api/auth/password-login'), { phone, password });
       return response.devOtp ?? null;
+    },
+    requestPasswordReset: async (phone) => {
+      const response = await postJson<{ devOtp?: string }>(apiUrl('/api/auth/password-reset/request'), { phone });
+      return response.devOtp ?? null;
+    },
+    confirmPasswordReset: async (phone, code, password) => {
+      const response = await postJson<PhoneAuthResponse>(apiUrl('/api/auth/password-reset/confirm'), { phone, code, password });
+      if (response.sessionToken) setSessionToken(response.sessionToken);
+      const confirmedUser = await readSession();
+      const nextUser = confirmedUser ?? response;
+      setUser(nextUser);
+      return nextUser;
     },
     verifyCode: async (phone, code) => {
       const response = await postJson<PhoneAuthResponse>(apiUrl('/api/auth/phone/verify-code'), { phone, code });

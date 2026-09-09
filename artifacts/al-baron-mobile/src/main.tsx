@@ -46,8 +46,8 @@ function isValidIsraeliPhone(value: string) {
   return normalizePhoneInput(value).length > 0;
 }
 
-function AuthScreen({ initialMode }: { initialMode: "sign-in" | "sign-up" }) {
-  const { requestCode, passwordLogin, verifyCode } = usePhoneAuth();
+function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-in" | "sign-up"; initialReset?: boolean }) {
+  const { requestCode, passwordLogin, requestPasswordReset, confirmPasswordReset, verifyCode } = usePhoneAuth();
   const [, setLocation] = useLocation();
   const [mode, setMode] = useState<"sign-in" | "sign-up">(initialMode);
   const [name, setName] = useState('');
@@ -60,6 +60,7 @@ function AuthScreen({ initialMode }: { initialMode: "sign-in" | "sign-up" }) {
   const [notice, setNotice] = useState('');
   const [devOtp, setDevOtp] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [resetMode, setResetMode] = useState(initialReset);
 
   const switchMode = (nextMode: "sign-in" | "sign-up") => {
     setMode(nextMode);
@@ -70,6 +71,7 @@ function AuthScreen({ initialMode }: { initialMode: "sign-in" | "sign-up" }) {
     setDevOtp(null);
     setPassword('');
     setPasswordConfirmation('');
+    setResetMode(false);
     setLocation(nextMode === 'sign-in' ? '/sign-in' : '/sign-up');
   };
 
@@ -90,13 +92,20 @@ function AuthScreen({ initialMode }: { initialMode: "sign-in" | "sign-up" }) {
       setError('كلمة المرور يجب أن تتكون من 8 أحرف على الأقل');
       return;
     }
-    if (mode === 'sign-up' && password !== passwordConfirmation) {
+    if ((mode === 'sign-up' || resetMode) && password !== passwordConfirmation) {
       setError('كلمتا المرور غير متطابقتين');
       return;
     }
     setPhone(internationalPhone);
     setSubmitting(true);
     try {
+      if (resetMode) {
+        const developmentOtp = await requestPasswordReset(internationalPhone);
+        setDevOtp(developmentOtp);
+        setCode('');
+        setStep('otp');
+        return;
+      }
       if (mode === 'sign-in') {
         const developmentOtp = await passwordLogin(internationalPhone, password);
         setDevOtp(developmentOtp);
@@ -125,7 +134,11 @@ function AuthScreen({ initialMode }: { initialMode: "sign-in" | "sign-up" }) {
     setError('');
     setSubmitting(true);
     try {
-      await verifyCode(phone, code);
+      if (resetMode) {
+        await confirmPasswordReset(phone, code, password);
+      } else {
+        await verifyCode(phone, code);
+      }
       window.location.replace('/home');
     } catch (verifyError) {
       setError(verifyError instanceof Error ? verifyError.message : 'رمز التحقق غير صحيح');
@@ -138,7 +151,9 @@ function AuthScreen({ initialMode }: { initialMode: "sign-in" | "sign-up" }) {
     setError('');
     setSubmitting(true);
     try {
-      const developmentOtp = await requestCode(phone, mode, mode === 'sign-up' ? name.trim() : undefined, password);
+      const developmentOtp = resetMode
+        ? await requestPasswordReset(phone)
+        : await requestCode(phone, mode, mode === 'sign-up' ? name.trim() : undefined, password);
       setDevOtp(developmentOtp);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'تعذر إعادة إرسال الرمز');
@@ -175,15 +190,15 @@ function AuthScreen({ initialMode }: { initialMode: "sign-in" | "sign-up" }) {
               <div className="mt-7 text-right">
                 <p className="text-xs font-bold tracking-[0.16em] text-primary">AL-BARON</p>
                 <h1 className="mt-2 text-2xl font-black text-foreground">
-                  {mode === 'sign-in' ? 'أهلاً بعودتك' : 'انضم إلى صالون البارون'}
+                  {resetMode ? 'استعادة كلمة المرور' : mode === 'sign-in' ? 'أهلاً بعودتك' : 'انضم إلى صالون البارون'}
                 </h1>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  {mode === 'sign-in' ? 'سجّل الدخول برقم هاتفك وكلمة المرور.' : 'أنشئ حسابك بالاسم والهاتف وكلمة المرور للبدء.'}
+                  {resetMode ? 'سنرسل رمزاً إلى WhatsApp المرتبط بالرقم لتعيين كلمة مرور جديدة.' : mode === 'sign-in' ? 'سجّل الدخول برقم هاتفك وكلمة المرور.' : 'أنشئ حسابك بالاسم والهاتف وكلمة المرور للبدء.'}
                 </p>
               </div>
 
               <form onSubmit={submitDetails} className="mt-7 space-y-4">
-                {mode === 'sign-up' && (
+                {mode === 'sign-up' && !resetMode && (
                   <label className="block text-right text-sm font-bold text-foreground">
                     الاسم الكامل
                     <input
@@ -215,7 +230,7 @@ function AuthScreen({ initialMode }: { initialMode: "sign-in" | "sign-up" }) {
                   </span>
                 </label>
                 <label className="block text-right text-sm font-bold text-foreground">
-                  كلمة المرور
+                  {resetMode ? 'كلمة المرور الجديدة' : 'كلمة المرور'}
                   <input
                     required
                     minLength={8}
@@ -223,14 +238,14 @@ function AuthScreen({ initialMode }: { initialMode: "sign-in" | "sign-up" }) {
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     placeholder="8 أحرف على الأقل"
-                    autoComplete={mode === 'sign-in' ? 'current-password' : 'new-password'}
+                  autoComplete={mode === 'sign-in' && !resetMode ? 'current-password' : 'new-password'}
                     dir="ltr"
                     className="mt-2 h-12 w-full rounded-xl border border-border bg-black/30 px-4 text-left text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
                   />
                 </label>
-                {mode === 'sign-up' && (
+                {(mode === 'sign-up' || resetMode) && (
                   <label className="block text-right text-sm font-bold text-foreground">
-                    تأكيد كلمة المرور
+                    {resetMode ? 'تأكيد كلمة المرور الجديدة' : 'تأكيد كلمة المرور'}
                     <input
                       required
                       minLength={8}
@@ -253,9 +268,19 @@ function AuthScreen({ initialMode }: { initialMode: "sign-in" | "sign-up" }) {
                   </div>
                 )}
                 {error && <p className="rounded-xl bg-destructive/10 p-3 text-right text-xs text-destructive">{error}</p>}
+                {mode === 'sign-in' && !resetMode && (
+                  <button type="button" onClick={() => { setResetMode(true); setError(''); setNotice(''); setPassword(''); setPasswordConfirmation(''); }} className="w-full text-xs font-bold text-primary">
+                    نسيت كلمة المرور؟
+                  </button>
+                )}
                 <button disabled={submitting} className="h-14 w-full rounded-xl bg-primary font-black text-primary-foreground transition-opacity disabled:opacity-60">
-                  {submitting ? (mode === 'sign-in' ? 'جارٍ تسجيل الدخول...' : 'جارٍ إرسال رمز التحقق...') : mode === 'sign-in' ? 'تسجيل الدخول' : 'إنشاء الحساب وإرسال الرمز'}
+                  {submitting ? (resetMode ? 'جارٍ إرسال رمز الاستعادة...' : mode === 'sign-in' ? 'جارٍ تسجيل الدخول...' : 'جارٍ إرسال رمز التحقق...') : resetMode ? 'إرسال رمز الاستعادة' : mode === 'sign-in' ? 'تسجيل الدخول' : 'إنشاء الحساب وإرسال الرمز'}
                 </button>
+                {resetMode && (
+                  <button type="button" onClick={() => { setResetMode(false); setError(''); setPassword(''); setPasswordConfirmation(''); }} className="w-full text-xs font-bold text-muted-foreground">
+                    العودة إلى تسجيل الدخول
+                  </button>
+                )}
               </form>
               {step === 'details' && <WhatsAppPairingQr compact />}
             </>
@@ -263,9 +288,9 @@ function AuthScreen({ initialMode }: { initialMode: "sign-in" | "sign-up" }) {
             <div className="text-center">
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/15 text-3xl">✉</div>
               <p className="mt-6 text-xs font-bold tracking-[0.16em] text-primary">VERIFY PHONE</p>
-              <h1 className="mt-2 text-2xl font-black text-foreground">تأكيد رقم الهاتف</h1>
+               <h1 className="mt-2 text-2xl font-black text-foreground">{resetMode ? 'تأكيد استعادة كلمة المرور' : 'تأكيد رقم الهاتف'}</h1>
               <p className="mt-3 text-sm leading-7 text-muted-foreground">
-                أدخل رمز التحقق المرسل برسالة SMS إلى
+                 أدخل الرمز المرسل عبر WhatsApp إلى
                 <span className="mx-1 font-bold text-foreground" dir="ltr">{phone}</span>
               </p>
               {devOtp && (
@@ -290,7 +315,7 @@ function AuthScreen({ initialMode }: { initialMode: "sign-in" | "sign-up" }) {
                 />
                 {error && <p className="rounded-xl bg-destructive/10 p-3 text-right text-xs text-destructive">{error}</p>}
                 <button disabled={submitting || code.length < 4} className="h-14 w-full rounded-xl bg-primary font-black text-primary-foreground transition-opacity disabled:opacity-60">
-                  {submitting ? 'جارٍ التحقق...' : 'تأكيد الدخول'}
+                   {submitting ? 'جارٍ التحقق...' : resetMode ? 'تعيين كلمة المرور والدخول' : 'تأكيد الدخول'}
                 </button>
                 <button type="button" disabled={submitting} onClick={resendCode} className="w-full text-sm font-bold text-primary disabled:opacity-50">
                   إعادة إرسال الرمز
@@ -348,7 +373,7 @@ function Routes() {
     <Switch>
       <Route path="/sign-in"><AuthScreen initialMode="sign-in" /></Route>
       <Route path="/sign-up"><AuthScreen initialMode="sign-up" /></Route>
-      <Route path="/forgot-password"><AuthScreen initialMode="sign-in" /></Route>
+      <Route path="/forgot-password"><AuthScreen initialMode="sign-in" initialReset /></Route>
       <Route path="/continue"><Redirect to="/home" /></Route>
       <Route path="/tv"><SalonProvider><TvDisplay /></SalonProvider></Route>
       <Route path="/tv-display"><SalonProvider><TvDisplay /></SalonProvider></Route>

@@ -52,10 +52,10 @@ function safeCodeMatch(code: string, expectedHash: string | null) {
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
-export async function sendPhoneCode(phone: string, challengeId: string) {
+export async function sendPhoneCode(phone: string, challengeId: string, provider = "whatsapp") {
   const code = randomInt(100000, 1000000).toString();
   await db.update(salonAuthChallenges).set({
-    provider: "whatsapp",
+    provider,
     devCodeHash: hash(code),
   }).where(eq(salonAuthChallenges.id, challengeId));
   try {

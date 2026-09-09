@@ -353,6 +353,65 @@ router.post("/auth/password-login", async (req, res, next) => {
   }
 });
 
+router.post("/auth/password-reset/request", async (req, res, next) => {
+  try {
+    const phone = normalizePhone(text(req.body?.phone));
+    if (!isValidIsraeliPhone(phone)) {
+      return res.status(400).json({ code: "INVALID_PHONE", message: "أدخل رقم هاتف إسرائيلي صالح يبدأ بـ 05" });
+    }
+    const [user] = await db.select().from(salonUsers).where(eq(salonUsers.phone, phone)).limit(1);
+    if (user?.isBanned) {
+      return res.status(403).json({ code: "ACCOUNT_BANNED", message: BANNED_BOOKING_MESSAGE });
+    }
+    if (!user || !user.passwordHash) {
+      return res.status(404).json({ code: "PHONE_NOT_REGISTERED", message: "الرقم غير مسجل، يرجى إنشاء حساب" });
+    }
+    const challenge = await createPhoneChallenge(phone, user.name);
+    const delivery = await sendPhoneCode(phone, challenge.id, "password-reset");
+    return res.status(202).json({
+      message: delivery.delivered ? "Password reset code sent" : "development verification code generated",
+      devOtp: delivery.devOtp,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post("/auth/password-reset/confirm", async (req, res, next) => {
+  try {
+    const phone = normalizePhone(text(req.body?.phone));
+    const code = text(req.body?.code);
+    const password = text(req.body?.password);
+    if (!isValidIsraeliPhone(phone) || !/^\d{4,6}$/.test(code) || password.length < 8) {
+      return res.status(400).json({ code: "PASSWORD_RESET_INPUT_REQUIRED", message: "رقم الهاتف والرمز وكلمة المرور الجديدة مطلوبة" });
+    }
+    const challenge = await verifyPhoneChallenge(phone, code);
+    if (!challenge || challenge.provider !== "password-reset") {
+      return res.status(401).json({ code: "INVALID_RESET_CODE", message: "رمز الاستعادة غير صحيح أو منتهي الصلاحية" });
+    }
+    const passwordHash = await hashPassword(password);
+    const [user] = await db.update(salonUsers)
+      .set({ passwordHash, updatedAt: new Date() })
+      .where(eq(salonUsers.phone, phone))
+      .returning();
+    if (!user) return res.status(404).json({ code: "PHONE_NOT_REGISTERED", message: "الرقم غير مسجل، يرجى إنشاء حساب" });
+    const token = await createSession(user.phone);
+    setSessionCookie(req, res, token);
+    return res.json({
+      id: user.id,
+      phone: user.phone,
+      name: user.name,
+      note: user.note,
+      role: user.role,
+      bookingRestricted: user.bookingRestricted,
+      accountNotice: user.accountNotice,
+      sessionToken: token,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 router.post("/auth/phone/verify-code", async (req, res, next) => {
   try {
     const phone = normalizePhone(text(req.body?.phone));
@@ -360,6 +419,9 @@ router.post("/auth/phone/verify-code", async (req, res, next) => {
     if (!phone || !/^\d{4,6}$/.test(code)) return res.status(400).json({ message: "phone and verification code are required" });
     const challenge = await verifyPhoneChallenge(phone, code);
     if (!challenge) return res.status(401).json({ message: "invalid or expired verification code" });
+    if (challenge.provider === "password-reset") {
+      return res.status(400).json({ code: "PASSWORD_RESET_CONFIRM_REQUIRED", message: "استخدم تأكيد استعادة كلمة المرور" });
+    }
     const [existing] = await db.select({ id: salonUsers.id, isBanned: salonUsers.isBanned }).from(salonUsers).where(eq(salonUsers.phone, challenge.phone)).limit(1);
     if (existing?.isBanned) {
       return res.status(403).json({ code: "ACCOUNT_BANNED", message: BANNED_BOOKING_MESSAGE });

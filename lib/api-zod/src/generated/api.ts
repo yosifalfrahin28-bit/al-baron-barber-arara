@@ -174,6 +174,43 @@ export const PasswordLoginResponse = zod.object({
 
 
 /**
+ * @summary Send a password reset code through WhatsApp
+ */
+export const RequestPasswordResetBody = zod.object({
+  "phone": zod.string()
+})
+
+export const RequestPasswordResetResponse = zod.void()
+
+
+/**
+ * @summary Confirm a password reset and create a session
+ */
+export const confirmPasswordResetBodyCodeMin = 4;
+export const confirmPasswordResetBodyCodeMax = 6;
+
+export const confirmPasswordResetBodyPasswordMin = 8;
+
+
+
+export const ConfirmPasswordResetBody = zod.object({
+  "phone": zod.string(),
+  "code": zod.string().min(confirmPasswordResetBodyCodeMin).max(confirmPasswordResetBodyCodeMax),
+  "password": zod.string().min(confirmPasswordResetBodyPasswordMin)
+})
+
+export const ConfirmPasswordResetResponse = zod.object({
+  "name": zod.string(),
+  "note": zod.string().optional()
+}).and(zod.object({
+  "id": zod.string(),
+  "role": zod.string(),
+  "bookingRestricted": zod.boolean().optional(),
+  "accountNotice": zod.string().optional()
+}))
+
+
+/**
  * @summary Verify a phone code and create a session
  */
 export const verifyPhoneCodeBodyCodeMin = 4;
