@@ -36,6 +36,21 @@ function salonMinutes(date: Date) {
   return value('hour') * 60 + value('minute') + value('second') / 60;
 }
 
+function salonCalendarDay(date: Date, offset: number) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: salonTimeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const value = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? 0);
+  const calendarDate = new Date(Date.UTC(value('year'), value('month') - 1, value('day') + offset, 12));
+  return {
+    date: calendarDate.toISOString().slice(0, 10),
+    dayOfWeek: calendarDate.getUTCDay(),
+  };
+}
+
 export default function Booking() {
   const [, setLocation] = useLocation();
   const { services, ageCategories, schedule, appointments, tickets, waitingTickets, selectedStyle, setSelectedStyle, joinQueue, bookAppointment, shopOpen } = useSalon();
@@ -56,19 +71,19 @@ export default function Booking() {
   const visibleServices = useMemo(() => services.filter((service) => service.visible), [services]);
   const selectedService = visibleServices.find((service) => service.id === serviceId) ?? visibleServices[0];
   const dayOptions = useMemo(() => Array.from({ length: 7 }, (_, offset) => {
-    const date = new Date();
-    date.setDate(date.getDate() + offset);
+    const salonDay = salonCalendarDay(new Date(nowTick), offset);
     return {
       offset,
-      dayOfWeek: date.getDay(),
-      label: offset === 0 ? 'اليوم' : offset === 1 ? 'غداً' : namedDays[date.getDay()],
-      date: salonDateKey(date),
+      dayOfWeek: salonDay.dayOfWeek,
+      label: offset === 0 ? 'اليوم' : offset === 1 ? 'غداً' : namedDays[salonDay.dayOfWeek],
+      date: salonDay.date,
     };
-  }), []);
+  }), [nowTick]);
   const selectedDay = dayOptions[dayOffset] ?? dayOptions[0];
   const scheduledTimes = useMemo(() => schedule
     .filter((slot) => slot.dayOfWeek === selectedDay?.dayOfWeek && slot.active)
     .map((slot) => slot.time)
+    .filter((slot, index, slots) => slots.indexOf(slot) === index)
     .sort(), [schedule, selectedDay]);
   const selectedDuration = (selectedService?.duration ?? 30) + Math.max(0, guestCount - 1) * 20;
   const todayKey = salonDateKey(new Date(nowTick));

@@ -101,7 +101,7 @@ const SalonContext = createContext<SalonContextValue | null>(null);
 export function SalonProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const { user } = usePhoneAuth();
-  const stateQuery = useGetSalonState({ query: { queryKey: getGetSalonStateQueryKey(), refetchInterval: 3000, staleTime: 1500 } });
+  const stateQuery = useGetSalonState({ query: { queryKey: getGetSalonStateQueryKey(), refetchInterval: 3000, refetchOnWindowFocus: true, staleTime: 1500 } });
   
   const [profile, setProfileState] = useState<LocalProfile>(DEFAULT_PROFILE);
   const [selectedStyle, setSelectedStyleState] = useState<string | null>(null);
