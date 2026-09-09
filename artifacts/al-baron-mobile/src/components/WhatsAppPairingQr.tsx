@@ -38,9 +38,9 @@ export default function WhatsAppPairingQr({ compact = false }: WhatsAppPairingQr
         if (next.qr && next.qr !== lastQr.current) {
           lastQr.current = next.qr;
           const image = await QRCode.toDataURL(next.qr, {
-            width: 420,
-            margin: 3,
-            errorCorrectionLevel: "M",
+            width: 560,
+            margin: 4,
+            errorCorrectionLevel: "L",
             color: { dark: "#111111", light: "#ffffff" },
           });
           if (!cancelled) setQrImage(image);
@@ -79,7 +79,7 @@ export default function WhatsAppPairingQr({ compact = false }: WhatsAppPairingQr
         ربط WhatsApp
       </h2>
       <p className="mt-2 text-xs leading-6 text-muted-foreground">
-        افتح WhatsApp ثم الأجهزة المرتبطة ثم ربط جهاز، وامسح الرمز الظاهر هنا.
+        افتح WhatsApp ثم الأجهزة المرتبطة ثم ربط جهاز، وامسح الرمز الظاهر هنا من داخل WhatsApp.
       </p>
 
       {qrImage && !connected ? (
@@ -87,7 +87,8 @@ export default function WhatsAppPairingQr({ compact = false }: WhatsAppPairingQr
           <img
             src={qrImage}
             alt="رمز QR لربط WhatsApp"
-            className={`block h-auto ${compact ? "w-[min(68vw,250px)]" : "w-[min(82vw,420px)]"}`}
+            className={`block h-auto ${compact ? "w-[min(88vw,420px)]" : "w-[min(88vw,460px)]"}`}
+            style={{ imageRendering: "pixelated" }}
           />
         </div>
       ) : connected ? (
@@ -106,7 +107,7 @@ export default function WhatsAppPairingQr({ compact = false }: WhatsAppPairingQr
         <p className="mt-4 rounded-xl bg-destructive/10 p-3 text-xs text-destructive">{error}</p>
       ) : (
         <p className="mt-4 text-[11px] text-muted-foreground">
-          يتجدد الرمز تلقائياً، ويختفي بعد نجاح الربط.
+          استخدم ماسح «الأجهزة المرتبطة» داخل WhatsApp، وليس كاميرا الهاتف العادية. يتجدد الرمز تلقائياً.
         </p>
       )}
     </section>
