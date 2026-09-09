@@ -233,6 +233,21 @@ router.get("/admin/whatsapp/qr", requireAuth, requireAdmin, (_req, res) => {
   });
 });
 
+router.get("/whatsapp/setup-qr", (req, res) => {
+  const configuredToken = (process.env.WHATSAPP_SETUP_TOKEN ?? "").trim();
+  const providedToken = typeof req.query.token === "string" ? req.query.token.trim() : "";
+  if (!configuredToken || !providedToken || providedToken !== configuredToken) {
+    return res.status(404).json({ message: "not found" });
+  }
+
+  const whatsapp = getWhatsAppStatus();
+  return res.json({
+    state: whatsapp.state,
+    qr: whatsapp.qr,
+    updatedAt: whatsapp.qrUpdatedAt,
+  });
+});
+
 router.get("/auth/me", requireAuth, async (req, res) => {
   const profile = req.salonUser!;
   res.json({ id: profile.id, phone: profile.phone, name: profile.name, note: profile.note, role: profile.role, bookingRestricted: profile.bookingRestricted, accountNotice: profile.accountNotice });
