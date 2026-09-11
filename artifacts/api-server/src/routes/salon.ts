@@ -40,7 +40,14 @@ import {
   verifyPhoneChallenge,
 } from "../middleware/auth";
 import { logger } from "../lib/logger";
-import { getWhatsAppStatus, sendWhatsAppMessage } from "../integrations/whatsapp";
+import {
+  getWhatsAppStatus,
+  isValidWhatsAppPhone,
+  normalizeWhatsAppPhone,
+  requestWhatsAppPairingCode,
+  sendWhatsAppMessage,
+  WhatsAppPairingError,
+} from "../integrations/whatsapp";
 import {
   DEFAULT_MESSAGE_TEMPLATES,
   MESSAGE_TEMPLATE_LABELS,
@@ -57,6 +64,86 @@ const text = (value: unknown, fallback = "") => typeof value === "string" ? valu
 const number = (value: unknown, fallback = 0) => typeof value === "number" && Number.isFinite(value) ? Math.round(value) : fallback;
 const bool = (value: unknown, fallback = true) => typeof value === "boolean" ? value : fallback;
 const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+const PAIRING_RATE_WINDOW_MS = 10 * 60 * 1000;
+const PAIRING_RATE_MAX_REQUESTS = 3;
+const pairingRateLimits = new Map<string, { count: number; resetAt: number }>();
+
+function pairingClientKey(req: Request, phone: string) {
+  // Express' req.ip remains useful behind Render/Vercel proxies and the
+  // normalized phone prevents one client from rotating through formatting
+  // variants to bypass the per-number limit.
+  return `${req.ip || "unknown"}:${phone}`;
+}
+
+function consumePairingRateLimit(key: string) {
+  const now = Date.now();
+  const current = pairingRateLimits.get(key);
+  if (!current || current.resetAt <= now) {
+    pairingRateLimits.set(key, { count: 1, resetAt: now + PAIRING_RATE_WINDOW_MS });
+    return { allowed: true, retryAfterSeconds: 0 };
+  }
+  if (current.count >= PAIRING_RATE_MAX_REQUESTS) {
+    return {
+      allowed: false,
+      retryAfterSeconds: Math.max(1, Math.ceil((current.resetAt - now) / 1000)),
+    };
+  }
+  current.count += 1;
+  return { allowed: true, retryAfterSeconds: 0 };
+}
+
+function pairingRateLimitKey(req: Request, phone: string, access: "public" | "admin") {
+  if (access === "admin" && req.salonUser?.id) {
+    return `admin:${req.salonUser.id}:${phone}`;
+  }
+  return `public:${pairingClientKey(req, phone)}`;
+}
+
+async function requestPairingCode(req: Request, res: Response, next: NextFunction, access: "public" | "admin") {
+  try {
+    const phone = normalizeWhatsAppPhone(text(req.body?.phone));
+    if (!isValidWhatsAppPhone(phone)) {
+      return res.status(400).json({
+        code: "INVALID_PHONE",
+        message: "أدخل رقم WhatsApp صالحاً بصيغة محلية أو دولية",
+      });
+    }
+
+    const rateLimit = consumePairingRateLimit(pairingRateLimitKey(req, phone, access));
+    if (!rateLimit.allowed) {
+      res.setHeader("Retry-After", String(rateLimit.retryAfterSeconds));
+      return res.status(429).json({
+        code: "PAIRING_RATE_LIMITED",
+        message: "تم طلب رموز كثيرة. انتظر قليلاً ثم حاول مرة أخرى",
+        retryAfterSeconds: rateLimit.retryAfterSeconds,
+      });
+    }
+
+    const pairing = await requestWhatsAppPairingCode(phone);
+    return res.json({
+      code: pairing.code,
+      expiresAt: pairing.expiresAt.toISOString(),
+    });
+  } catch (error) {
+    if (error instanceof WhatsAppPairingError) {
+      return res.status(error.statusCode).json({
+        code: error.code,
+        message: error.message,
+      });
+    }
+    return next(error);
+  }
+}
+
+function cleanupPairingRateLimits() {
+  const now = Date.now();
+  for (const [key, value] of pairingRateLimits) {
+    if (value.resetAt <= now) pairingRateLimits.delete(key);
+  }
+}
+
+const pairingRateLimitCleanup = setInterval(cleanupPairingRateLimits, PAIRING_RATE_WINDOW_MS);
+pairingRateLimitCleanup.unref?.();
 
 const defaultServices = [
   { id: "haircut", name: "قص شعر مودرن", description: "قصّة دقيقة مع تدريج احترافي", price: 60, duration: 30, visible: true },
@@ -454,6 +541,10 @@ router.get("/admin/whatsapp/qr", requireAuth, requireAdmin, (_req, res) => {
   });
 });
 
+router.post("/admin/whatsapp/pairing-code", requireAuth, requireAdmin, (req, res, next) => {
+  return requestPairingCode(req, res, next, "admin");
+});
+
 router.get("/whatsapp/setup-qr", (req, res) => {
   const whatsapp = getWhatsAppStatus();
   return res.json({
@@ -461,6 +552,10 @@ router.get("/whatsapp/setup-qr", (req, res) => {
     qr: whatsapp.qr,
     updatedAt: whatsapp.qrUpdatedAt,
   });
+});
+
+router.post("/whatsapp/setup-pairing-code", (req, res, next) => {
+  return requestPairingCode(req, res, next, "public");
 });
 
 router.get("/auth/me", requireAuth, async (req, res) => {
