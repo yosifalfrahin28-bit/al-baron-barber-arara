@@ -1,6 +1,7 @@
 import { apiUrl } from '@/lib/api';
 
 const SESSION_TOKEN_KEY = 'al-baron-session-token';
+const DEVICE_ID_KEY = 'al-baron-random-device-id-v1';
 
 export function getSessionToken() {
   try {
@@ -37,6 +38,26 @@ export function clearSessionToken() {
   }
 }
 
+/**
+ * This is deliberately a random, per-install identifier. It is not derived
+ * from browser/device characteristics and is only sent to the API so that
+ * support staff can investigate unusual booking patterns. The API hashes it
+ * before persistence and never treats a device by itself as a ban signal.
+ */
+export function getRandomDeviceId() {
+  try {
+    const existing = localStorage.getItem(DEVICE_ID_KEY);
+    if (existing) return existing;
+    const generated = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem(DEVICE_ID_KEY, generated);
+    return generated;
+  } catch {
+    return '';
+  }
+}
+
 export class SessionApiError extends Error {
   readonly status: number;
 
@@ -56,6 +77,8 @@ export async function sessionRequest<T>(path: string, init: RequestInit = {}): P
   if (sessionToken && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${sessionToken}`);
   }
+  const deviceId = getRandomDeviceId();
+  if (deviceId && !headers.has('X-Device-ID')) headers.set('X-Device-ID', deviceId);
 
   const response = await fetch(apiUrl(path), {
     ...init,

@@ -6,12 +6,23 @@
  * OpenAPI spec version: 0.2.0
  */
 
+export * from './antiAbuseNotification';
+export * from './antiAbuseNotificationKind';
+export * from './antiAbuseNotifications';
+export * from './antiAbusePolicy';
 export * from './appointment';
 export * from './appointmentCancellationInput';
 export * from './appointmentCancellationResult';
+export * from './appointmentDecisionInput';
+export * from './appointmentDecisionInputDecision';
+export * from './appointmentDecisionResult';
+export * from './appointmentDecisionResultDecision';
 export * from './appointmentInput';
 export * from './appointmentInputPaymentMethod';
 export * from './appointmentPaymentMethod';
+export * from './appointmentStatus';
+export * from './appointmentStatusInput';
+export * from './appointmentStatusInputStatus';
 export * from './barber';
 export * from './barberInput';
 export * from './broadcastInput';

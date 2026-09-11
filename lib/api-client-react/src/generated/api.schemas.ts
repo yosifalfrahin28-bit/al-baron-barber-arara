@@ -313,6 +313,18 @@ export const AppointmentPaymentMethod = {
   cash_at_shop: 'cash_at_shop',
 } as const;
 
+export type AppointmentStatus = typeof AppointmentStatus[keyof typeof AppointmentStatus];
+
+
+export const AppointmentStatus = {
+  confirmed: 'confirmed',
+  pending_approval: 'pending_approval',
+  rejected: 'rejected',
+  cancelled: 'cancelled',
+  completed: 'completed',
+  no_show: 'no_show',
+} as const;
+
 export interface Appointment {
   id: string;
   name: string;
@@ -326,7 +338,7 @@ export interface Appointment {
   /** @minItems 1 */
   participantCategories: string[];
   paymentMethod: AppointmentPaymentMethod;
-  status: string;
+  status: AppointmentStatus;
   confirmationSent: boolean;
   reminderSent: boolean;
   reminderOneHourSent: boolean;
@@ -343,6 +355,88 @@ export interface AppointmentCancellationInput {
 export interface AppointmentCancellationResult {
   appointment: Appointment;
   whatsappUrl: string;
+}
+
+export type AppointmentDecisionInputDecision = typeof AppointmentDecisionInputDecision[keyof typeof AppointmentDecisionInputDecision];
+
+
+export const AppointmentDecisionInputDecision = {
+  approve: 'approve',
+  reject: 'reject',
+} as const;
+
+export interface AppointmentDecisionInput {
+  decision: AppointmentDecisionInputDecision;
+  /** @maxLength 500 */
+  reason?: string;
+}
+
+export type AppointmentDecisionResultDecision = typeof AppointmentDecisionResultDecision[keyof typeof AppointmentDecisionResultDecision];
+
+
+export const AppointmentDecisionResultDecision = {
+  approve: 'approve',
+  reject: 'reject',
+} as const;
+
+export interface AppointmentDecisionResult {
+  appointment: Appointment;
+  decision: AppointmentDecisionResultDecision;
+  sent?: boolean;
+}
+
+export type AppointmentStatusInputStatus = typeof AppointmentStatusInputStatus[keyof typeof AppointmentStatusInputStatus];
+
+
+export const AppointmentStatusInputStatus = {
+  completed: 'completed',
+  no_show: 'no_show',
+} as const;
+
+export interface AppointmentStatusInput {
+  status: AppointmentStatusInputStatus;
+}
+
+export interface AntiAbusePolicy {
+  /** @minimum 1 */
+  maxFutureConfirmedAppointments: number;
+  /** @minimum 1 */
+  dailyBookingLimit: number;
+  /** @minimum 1 */
+  dailyCancellationLimit: number;
+  /** @minimum 1 */
+  repeatedIncidentThreshold: number;
+  /** @minimum 1 */
+  incidentWindowDays: number;
+  /** @minimum 1 */
+  lateCancellationWindowHours: number;
+}
+
+export type AntiAbuseNotificationKind = typeof AntiAbuseNotificationKind[keyof typeof AntiAbuseNotificationKind];
+
+
+export const AntiAbuseNotificationKind = {
+  phone_burst: 'phone_burst',
+  shared_device: 'shared_device',
+  cancellation_rate: 'cancellation_rate',
+} as const;
+
+export interface AntiAbuseNotification {
+  id: string;
+  kind: AntiAbuseNotificationKind;
+  phone?: string;
+  /** Short digest hint only; never the raw device ID. */
+  deviceHint?: string;
+  bookingCount: number;
+  distinctPhones: number;
+  lastSeenAt: string;
+  message: string;
+  autoRestricted: false;
+}
+
+export interface AntiAbuseNotifications {
+  policy: AntiAbusePolicy;
+  notifications: AntiAbuseNotification[];
 }
 
 export interface ScheduleSlotInput {

@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.2.0
  */
 import type { AppointmentPaymentMethod } from './appointmentPaymentMethod';
+import type { AppointmentStatus } from './appointmentStatus';
 
 export interface Appointment {
   id: string;
@@ -20,7 +21,7 @@ export interface Appointment {
   /** @minItems 1 */
   participantCategories: string[];
   paymentMethod: AppointmentPaymentMethod;
-  status: string;
+  status: AppointmentStatus;
   confirmationSent: boolean;
   reminderSent: boolean;
   reminderOneHourSent: boolean;

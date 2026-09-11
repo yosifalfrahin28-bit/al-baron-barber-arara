@@ -19,6 +19,17 @@ type AdminReview = {
   status: string;
   createdAt: string;
 };
+type AntiAbuseNotification = {
+  id: string;
+  kind: 'phone_burst' | 'shared_device' | 'cancellation_rate';
+  phone?: string;
+  deviceHint?: string;
+  bookingCount: number;
+  distinctPhones: number;
+  lastSeenAt: string;
+  message: string;
+  autoRestricted: false;
+};
 
 export default function Admin() {
   const [, setLocation] = useLocation();
@@ -56,7 +67,7 @@ export default function Admin() {
     toggleDurationToCustomers,
   } = useSalon();
   
-  const [tab, setTab] = useState<'queue' | 'services' | 'barbers' | 'clients' | 'broadcast' | 'schedule' | 'appointments' | 'ages' | 'products' | 'shop' | 'templates' | 'reviews'>('queue');
+  const [tab, setTab] = useState<'queue' | 'services' | 'barbers' | 'clients' | 'broadcast' | 'schedule' | 'appointments' | 'ages' | 'products' | 'shop' | 'templates' | 'reviews' | 'anti-abuse'>('queue');
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<Service | null>(null);
   const [walkInModal, setWalkInModal] = useState(false);
@@ -112,6 +123,9 @@ export default function Admin() {
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const [adminAppointments, setAdminAppointments] = useState<Appointment[]>([]);
   const [appointmentsLoading, setAppointmentsLoading] = useState(false);
+  const [antiAbuseNotifications, setAntiAbuseNotifications] = useState<AntiAbuseNotification[]>([]);
+  const [antiAbuseLoading, setAntiAbuseLoading] = useState(false);
+  const [antiAbusePolicy, setAntiAbusePolicy] = useState<{ maxFutureConfirmedAppointments: number; dailyBookingLimit: number; dailyCancellationLimit: number; repeatedIncidentThreshold: number; incidentWindowDays: number; lateCancellationWindowHours: number } | null>(null);
 
   const customersQuery = useListAdminCustomers({ query: { queryKey: getListAdminCustomersQueryKey(), enabled: role === 'admin', refetchInterval: 5000 } });
   
@@ -157,6 +171,22 @@ export default function Admin() {
         })
         .finally(() => {
           if (!cancelled) setReviewsLoading(false);
+        });
+    }
+    if (tab === 'anti-abuse' || tab === 'appointments') {
+      setAntiAbuseLoading(true);
+      sessionRequest<{ policy: NonNullable<typeof antiAbusePolicy>; notifications: AntiAbuseNotification[] }>('/api/admin/anti-abuse/notifications')
+        .then((data) => {
+          if (!cancelled) {
+            setAntiAbusePolicy(data.policy);
+            setAntiAbuseNotifications(data.notifications);
+          }
+        })
+        .catch((error) => {
+          if (!cancelled) setActionError(getActionError(error));
+        })
+        .finally(() => {
+          if (!cancelled) setAntiAbuseLoading(false);
         });
     }
     if (tab === 'barbers') {
@@ -501,7 +531,7 @@ export default function Admin() {
 
   const confirmAppointmentCancellation = () => {
     if (!appointmentToCancel) return;
-    cancelAppointment(appointmentToCancel.id, cancellationReason, (whatsappUrl) => {
+    void cancelAppointment(appointmentToCancel.id, cancellationReason, (whatsappUrl) => {
       setCancelAppointmentId(null);
       setCancellationReason('');
       if (whatsappUrl) {
@@ -509,7 +539,33 @@ export default function Admin() {
       } else {
         alert('تم إلغاء الموعد، لكن لا يوجد رقم هاتف صالح لفتح WhatsApp.');
       }
-    });
+    }).catch((error) => setActionError(getActionError(error)));
+  };
+
+  const reviewAppointment = async (appointment: Appointment, decision: 'approve' | 'reject') => {
+    setActionError('');
+    setActionPending(true);
+    try {
+      const result = await sessionJson<{ appointment: Appointment }>(`/api/admin/appointments/${appointment.id}/decision`, 'POST', { decision });
+      setAdminAppointments((current) => current.map((item) => item.id === result.appointment.id ? result.appointment : item));
+    } catch (error) {
+      setActionError(getActionError(error));
+    } finally {
+      setActionPending(false);
+    }
+  };
+
+  const updateAppointmentStatus = async (appointment: Appointment, status: 'completed' | 'no_show') => {
+    setActionError('');
+    setActionPending(true);
+    try {
+      const updated = await sessionJson<Appointment>(`/api/admin/appointments/${appointment.id}/status`, 'PATCH', { status });
+      setAdminAppointments((current) => current.map((item) => item.id === updated.id ? updated : item));
+    } catch (error) {
+      setActionError(getActionError(error));
+    } finally {
+      setActionPending(false);
+    }
   };
 
   const toggleCustomerBan = async (customer: Customer) => {
@@ -563,7 +619,7 @@ export default function Admin() {
     try {
       await sessionJson(`/api/admin/customers/${customer.id}/restrictions`, 'PATCH', {
         bookingRestricted,
-        accountNotice: noticeDrafts[customer.id] ?? customer.accountNotice ?? '',
+        accountNotice: bookingRestricted ? (noticeDrafts[customer.id] ?? customer.accountNotice ?? '') : '',
       });
       await customersQuery.refetch();
     } catch (error) {
@@ -799,6 +855,7 @@ export default function Admin() {
         {[
           ['queue', 'الدور الحالي'], 
           ['appointments', 'المواعيد'],
+           ['anti-abuse', 'مراجعة الحماية'],
           ['schedule', 'الجدول'],
            ['barbers', 'الحلاقون'],
           ['services', 'الخدمات والأسعار'], 
@@ -936,9 +993,19 @@ export default function Admin() {
                     </div>
                   </div>
                   <StatusPill positive={appointment.status === 'confirmed'}>
-                    {appointment.status === 'cancelled' ? 'ملغى' : appointment.status === 'completed' ? 'مكتمل' : 'مؤكد'}
+                    {appointment.status === 'cancelled' ? 'ملغى' : appointment.status === 'completed' ? 'مكتمل' : appointment.status === 'no_show' ? 'غياب' : appointment.status === 'pending_approval' ? 'بانتظار الموافقة' : appointment.status === 'rejected' ? 'مرفوض' : 'مؤكد'}
                   </StatusPill>
                 </div>
+                {appointment.status === 'pending_approval' && (
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    <button type="button" disabled={actionPending} onClick={() => { void reviewAppointment(appointment, 'approve'); }} className="flex min-h-11 flex-row-reverse items-center justify-center gap-2 rounded-xl bg-primary px-2 text-[11px] font-black text-primary-foreground disabled:opacity-50">
+                      <CheckCircle size={15} /> موافقة بعد إعادة التحقق
+                    </button>
+                    <button type="button" disabled={actionPending} onClick={() => { void reviewAppointment(appointment, 'reject'); }} className="flex min-h-11 flex-row-reverse items-center justify-center gap-2 rounded-xl border border-destructive/30 px-2 text-[11px] font-black text-destructive disabled:opacity-50">
+                      <X size={15} /> رفض الطلب
+                    </button>
+                  </div>
+                )}
                 {appointment.status === 'confirmed' && (
                   <div className="mt-4 grid grid-cols-2 gap-2">
                     <button
@@ -962,11 +1029,62 @@ export default function Admin() {
                       <X size={17} />
                       إلغاء الموعد
                     </button>
+                    <button type="button" disabled={actionPending} onClick={() => { void updateAppointmentStatus(appointment, 'completed'); }} className="flex min-h-11 flex-row-reverse items-center justify-center gap-2 rounded-xl border border-primary/30 px-2 text-[11px] font-bold text-primary disabled:opacity-50">
+                      <CheckCircle size={15} /> تم الحضور
+                    </button>
+                    <button type="button" disabled={actionPending} onClick={() => { void updateAppointmentStatus(appointment, 'no_show'); }} className="flex min-h-11 flex-row-reverse items-center justify-center gap-2 rounded-xl border border-destructive/30 px-2 text-[11px] font-bold text-destructive disabled:opacity-50">
+                      <ShieldAlert size={15} /> تسجيل غياب
+                    </button>
                   </div>
                 )}
               </Card>
             ))}
           </div>
+        </div>
+      )}
+
+      {tab === 'anti-abuse' && (
+        <div className="animate-fade-in" dir="rtl">
+          <SectionTitle title="مراجعة الحماية" action={`${antiAbuseNotifications.length} تنبيه`} />
+          <Card className="mt-4 border border-primary/20 bg-primary/5 p-4">
+            <div className="flex flex-row-reverse items-start gap-3">
+              <ShieldCheck size={20} className="mt-0.5 shrink-0 text-primary" />
+              <p className="text-right text-xs leading-6 text-muted-foreground">
+                الحدود الصريحة: {antiAbusePolicy?.maxFutureConfirmedAppointments ?? 2} مواعيد مؤكدة مستقبلية لكل حساب،
+                {' '}{antiAbusePolicy?.dailyBookingLimit ?? 5} طلبات حجز و{antiAbusePolicy?.dailyCancellationLimit ?? 3} إلغاءات يومياً.
+                بعد {antiAbusePolicy?.repeatedIncidentThreshold ?? 3} حالات غياب/إلغاء متأخر خلال {antiAbusePolicy?.incidentWindowDays ?? 90} يوماً يُقيد الحساب للمراجعة.
+                معرّف الجهاز عشوائي ومشفّر؛ مشاركة الجهاز وحدها لا تحظر أحداً.
+              </p>
+            </div>
+          </Card>
+          {antiAbuseLoading ? (
+            <Card className="mt-4 p-6 text-center text-sm text-muted-foreground">جارٍ تحميل التنبيهات...</Card>
+          ) : antiAbuseNotifications.length === 0 ? (
+            <Card className="mt-4 p-6 text-center text-sm text-muted-foreground">لا توجد أنماط متكررة تحتاج مراجعة خلال آخر 24 ساعة.</Card>
+          ) : (
+            <div className="mt-4 space-y-3">
+              {antiAbuseNotifications.map((notification) => (
+                <Card key={notification.id} className="border border-amber-500/30 bg-amber-500/5 p-4">
+                  <div className="flex flex-row-reverse items-start gap-3">
+                    <ShieldAlert size={20} className="shrink-0 text-amber-600" />
+                    <div className="flex-1 text-right">
+                      <div className="text-sm font-black text-foreground">
+                        {notification.kind === 'phone_burst'
+                          ? 'نشاط متكرر من رقم واحد'
+                          : notification.kind === 'cancellation_rate'
+                            ? 'حد الإلغاءات اليومية'
+                            : 'جهاز مشترك بين حسابات'}
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">{notification.message}</p>
+                      {notification.phone && <div className="mt-2 text-xs font-bold text-foreground">الهاتف: {notification.phone}</div>}
+                      {notification.deviceHint && <div className="mt-2 text-[11px] text-muted-foreground">مرجع الجهاز المجهول: {notification.deviceHint}…</div>}
+                      <div className="mt-2 text-[11px] font-bold text-amber-700">مراجعة بشرية فقط — لم يتم الحظر تلقائياً.</div>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

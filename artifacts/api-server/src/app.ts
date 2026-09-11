@@ -66,7 +66,13 @@ app.use(
     },
   }),
 );
-app.use(cors({ credentials: true, origin: corsOrigin }));
+app.use(cors({
+  credentials: true,
+  origin: corsOrigin,
+  // Booking abuse review uses a random per-install X-Device-ID header.
+  // Keep it explicit so external Vercel/Render origins pass preflight.
+  allowedHeaders: ["Content-Type", "Authorization", "X-Device-ID"],
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());

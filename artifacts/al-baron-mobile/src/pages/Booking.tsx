@@ -81,6 +81,7 @@ export default function Booking() {
   const [time, setTime] = useState('');
   const [isConfirming, setIsConfirming] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
+  const [createdAppointmentStatus, setCreatedAppointmentStatus] = useState<string>('confirmed');
   const [errorMessage, setErrorMessage] = useState('');
   const [nowTick, setNowTick] = useState(() => Date.now());
   const availableBarbers = useMemo(() => [
@@ -129,8 +130,8 @@ export default function Booking() {
         return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
       });
       if (requiredSlots.some((slot) => !scheduledSet.has(slot))) return false;
-      return !appointments.some((appointment) => {
-        if (appointment.date !== selectedDay?.date || appointment.status === 'cancelled') return false;
+        return !appointments.some((appointment) => {
+         if (appointment.date !== selectedDay?.date || appointment.status !== 'confirmed') return false;
         const existingStart = toMinutes(appointment.time);
         const existingDuration = roundToBookingUnits((services.find((service) => service.name === appointment.service)?.duration ?? 30)
           + (appointment.participantCategories?.slice(1).reduce((total, category) => total + additionalMinutesForCategory(category, ageCategories), 0) ?? Math.max(0, (appointment.guestCount ?? 1) - 1) * 25));
@@ -243,8 +244,8 @@ export default function Booking() {
           participantCategories,
           paymentMethod,
         });
-      } else {
-        await bookAppointment({
+       } else {
+         const created = await bookAppointment({
           date: selectedDay.date,
           time,
           barber,
@@ -253,11 +254,16 @@ export default function Booking() {
           guestCount: participantCategories.length,
           participantCategories,
           paymentMethod,
-        });
+         });
+         setCreatedAppointmentStatus(created.status);
       }
       setIsComplete(true);
     } catch (error) {
-      setErrorMessage(error instanceof Error && error.message.includes('تم حظر')
+       setErrorMessage(error instanceof Error && error.message.includes('حد الحجوزات اليومية')
+         ? 'تم الوصول إلى حد 5 حجوزات يومياً. حاول غداً أو تواصل مع الصالون.'
+         : error instanceof Error && error.message.includes('دور نشط')
+           ? 'لديك دور نشط بالفعل. ألغِ الدور الحالي قبل الانضمام مرة أخرى.'
+           : error instanceof Error && error.message.includes('تم حظر')
         ? 'عذراً، تم حظر حسابك من حجز المواعيد'
         : error instanceof Error && error.message.includes('محجوز')
           ? error.message
@@ -276,10 +282,14 @@ export default function Booking() {
               <CheckCircle2 size={42} className="text-primary" />
             </div>
             <p className="mt-7 text-xs font-bold tracking-widest text-primary">تم الحفظ بنجاح</p>
-            <h1 className="mt-3 text-3xl font-black text-foreground">تم تأكيد الحجز</h1>
+             <h1 className="mt-3 text-3xl font-black text-foreground">
+               {mode === 'appointment' && createdAppointmentStatus === 'pending_approval' ? 'بانتظار موافقة الصالون' : 'تم تأكيد الحجز'}
+             </h1>
             <p className="mt-3 max-w-xs text-sm leading-7 text-muted-foreground">
-              {mode === 'queue'
+               {mode === 'queue'
                 ? 'تمت إضافتك إلى الدور. يمكنك متابعة رقمك وحالته من صفحة حسابي.'
+                 : createdAppointmentStatus === 'pending_approval'
+                   ? `طلبك في ${selectedDay.label} الساعة ${time} محفوظ للمراجعة. لا يحجز الطلب وقتاً حتى توافق الإدارة، وسنحدّث حالته في حسابك.`
                 : `موعدك محفوظ في ${selectedDay.label} الساعة ${time}. يمكنك مراجعة التفاصيل من صفحة حسابي.`}
             </p>
             <div className="mt-9 w-full max-w-xs">
@@ -363,6 +373,12 @@ export default function Booking() {
             <p className="flex-1 text-right text-xs font-semibold leading-relaxed text-destructive">تم تقييد الحجز على حسابك. يرجى التواصل مع الصالون.</p>
           </div>
         )}
+
+        <div className="mb-5 rounded-xl border border-primary/20 bg-primary/5 p-4 text-right text-xs leading-6 text-muted-foreground">
+          <strong className="text-foreground">سياسة الحجز الواضحة:</strong> يمكن لكل حساب الاحتفاظ بموعدين مؤكدين مستقبليين كحد أقصى.
+          الطلب الثالث، أو حجز موعد آخر في اليوم نفسه، ينتقل إلى مراجعة الإدارة ولا يحجز الوقت حتى تتم الموافقة.
+          الحد اليومي 5 طلبات حجز و3 إلغاءات. هذه الحدود لا تمنعك من إلغاء موعد حقيقي مؤكد.
+        </div>
 
         {!shopOpen && (
           <div className="mb-5 flex flex-row-reverse items-center gap-3 rounded-xl border border-destructive/40 bg-destructive/10 p-4 animate-fade-in">

@@ -20,10 +20,15 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AntiAbuseNotifications,
+  AntiAbusePolicy,
   Appointment,
   AppointmentCancellationInput,
   AppointmentCancellationResult,
+  AppointmentDecisionInput,
+  AppointmentDecisionResult,
   AppointmentInput,
+  AppointmentStatusInput,
   Barber,
   BarberInput,
   BroadcastInput,
@@ -1106,6 +1111,304 @@ export function useListAdminAppointments<TData = Awaited<ReturnType<typeof listA
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListAdminAppointmentsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getReviewAppointmentUrl = (id: string,) => {
+
+
+
+
+  return `/api/admin/appointments/${id}/decision`
+}
+
+/**
+ * @summary Approve or reject a pending appointment with a transactional slot recheck
+ */
+export const reviewAppointment = async (id: string,
+    appointmentDecisionInput: AppointmentDecisionInput, options?: Parameters<typeof customFetch>[1]): Promise<AppointmentDecisionResult> => {
+
+  return customFetch<AppointmentDecisionResult>(getReviewAppointmentUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(appointmentDecisionInput)
+  }
+);}
+
+
+
+
+
+export const getReviewAppointmentMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reviewAppointment>>, TError,{id: string;data: BodyType<AppointmentDecisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reviewAppointment>>, TError,{id: string;data: BodyType<AppointmentDecisionInput>}, TContext> => {
+
+const mutationKey = ['reviewAppointment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reviewAppointment>>, {id: string;data: BodyType<AppointmentDecisionInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  reviewAppointment(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReviewAppointmentMutationResult = NonNullable<Awaited<ReturnType<typeof reviewAppointment>>>
+    export type ReviewAppointmentMutationBody = BodyType<AppointmentDecisionInput>
+    export type ReviewAppointmentMutationError = ErrorType<void>
+
+    /**
+ * @summary Approve or reject a pending appointment with a transactional slot recheck
+ */
+export const useReviewAppointment = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reviewAppointment>>, TError,{id: string;data: BodyType<AppointmentDecisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reviewAppointment>>,
+        TError,
+        {id: string;data: BodyType<AppointmentDecisionInput>},
+        TContext
+      > => {
+      return useMutation(getReviewAppointmentMutationOptions(options));
+    }
+
+export const getUpdateAppointmentStatusUrl = (id: string,) => {
+
+
+
+
+  return `/api/admin/appointments/${id}/status`
+}
+
+/**
+ * @summary Mark a confirmed appointment completed or no-show
+ */
+export const updateAppointmentStatus = async (id: string,
+    appointmentStatusInput: AppointmentStatusInput, options?: Parameters<typeof customFetch>[1]): Promise<Appointment> => {
+
+  return customFetch<Appointment>(getUpdateAppointmentStatusUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(appointmentStatusInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateAppointmentStatusMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAppointmentStatus>>, TError,{id: string;data: BodyType<AppointmentStatusInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateAppointmentStatus>>, TError,{id: string;data: BodyType<AppointmentStatusInput>}, TContext> => {
+
+const mutationKey = ['updateAppointmentStatus'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAppointmentStatus>>, {id: string;data: BodyType<AppointmentStatusInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateAppointmentStatus(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAppointmentStatusMutationResult = NonNullable<Awaited<ReturnType<typeof updateAppointmentStatus>>>
+    export type UpdateAppointmentStatusMutationBody = BodyType<AppointmentStatusInput>
+    export type UpdateAppointmentStatusMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Mark a confirmed appointment completed or no-show
+ */
+export const useUpdateAppointmentStatus = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAppointmentStatus>>, TError,{id: string;data: BodyType<AppointmentStatusInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateAppointmentStatus>>,
+        TError,
+        {id: string;data: BodyType<AppointmentStatusInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateAppointmentStatusMutationOptions(options));
+    }
+
+export const getGetAntiAbusePolicyUrl = () => {
+
+
+
+
+  return `/api/admin/anti-abuse/policy`
+}
+
+/**
+ * @summary Read the explicit customer booking protection thresholds
+ */
+export const getAntiAbusePolicy = async ( options?: Parameters<typeof customFetch>[1]): Promise<AntiAbusePolicy> => {
+
+  return customFetch<AntiAbusePolicy>(getGetAntiAbusePolicyUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAntiAbusePolicyQueryKey = () => {
+    return [
+    `/api/admin/anti-abuse/policy`
+    ] as const;
+    }
+
+
+export const getGetAntiAbusePolicyQueryOptions = <TData = Awaited<ReturnType<typeof getAntiAbusePolicy>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAntiAbusePolicy>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAntiAbusePolicyQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAntiAbusePolicy>>> = ({ signal }) => getAntiAbusePolicy({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAntiAbusePolicy>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAntiAbusePolicyQueryResult = NonNullable<Awaited<ReturnType<typeof getAntiAbusePolicy>>>
+export type GetAntiAbusePolicyQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Read the explicit customer booking protection thresholds
+ */
+
+export function useGetAntiAbusePolicy<TData = Awaited<ReturnType<typeof getAntiAbusePolicy>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAntiAbusePolicy>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAntiAbusePolicyQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListAntiAbuseNotificationsUrl = () => {
+
+
+
+
+  return `/api/admin/anti-abuse/notifications`
+}
+
+/**
+ * @summary List repeated phone/device booking signals for human review
+ */
+export const listAntiAbuseNotifications = async ( options?: Parameters<typeof customFetch>[1]): Promise<AntiAbuseNotifications> => {
+
+  return customFetch<AntiAbuseNotifications>(getListAntiAbuseNotificationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAntiAbuseNotificationsQueryKey = () => {
+    return [
+    `/api/admin/anti-abuse/notifications`
+    ] as const;
+    }
+
+
+export const getListAntiAbuseNotificationsQueryOptions = <TData = Awaited<ReturnType<typeof listAntiAbuseNotifications>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAntiAbuseNotifications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAntiAbuseNotificationsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAntiAbuseNotifications>>> = ({ signal }) => listAntiAbuseNotifications({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAntiAbuseNotifications>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAntiAbuseNotificationsQueryResult = NonNullable<Awaited<ReturnType<typeof listAntiAbuseNotifications>>>
+export type ListAntiAbuseNotificationsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List repeated phone/device booking signals for human review
+ */
+
+export function useListAntiAbuseNotifications<TData = Awaited<ReturnType<typeof listAntiAbuseNotifications>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAntiAbuseNotifications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAntiAbuseNotificationsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

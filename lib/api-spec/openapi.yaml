@@ -222,6 +222,78 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Appointment"
+  /admin/appointments/{id}/decision:
+    post:
+      operationId: reviewAppointment
+      tags: [auth]
+      summary: Approve or reject a pending appointment with a transactional slot recheck
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppointmentDecisionInput"
+      responses:
+        "200":
+          description: Reviewed appointment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentDecisionResult"
+        "409":
+          description: Appointment was already reviewed or its time is no longer available
+  /admin/appointments/{id}/status:
+    patch:
+      operationId: updateAppointmentStatus
+      tags: [auth]
+      summary: Mark a confirmed appointment completed or no-show
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppointmentStatusInput"
+      responses:
+        "200":
+          description: Updated appointment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+  /admin/anti-abuse/policy:
+    get:
+      operationId: getAntiAbusePolicy
+      tags: [auth]
+      summary: Read the explicit customer booking protection thresholds
+      responses:
+        "200":
+          description: Anti-abuse policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AntiAbusePolicy"
+  /admin/anti-abuse/notifications:
+    get:
+      operationId: listAntiAbuseNotifications
+      tags: [auth]
+      summary: List repeated phone/device booking signals for human review
+      responses:
+        "200":
+          description: Privacy-preserving anti-abuse notifications
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AntiAbuseNotifications"
   /admin/broadcast-whatsapp:
     post:
       operationId: createWhatsappBroadcast
@@ -451,6 +523,12 @@ paths:
     post:
       operationId: createTicket
       tags: [salon]
+      parameters:
+        - in: header
+          name: X-Device-ID
+          required: false
+          description: Random per-install identifier; never a browser fingerprint and never an automatic ban signal.
+          schema: { type: string, maxLength: 128 }
       requestBody:
         required: true
         content:
@@ -545,6 +623,12 @@ paths:
     post:
       operationId: createAppointment
       tags: [salon]
+      parameters:
+        - in: header
+          name: X-Device-ID
+          required: false
+          description: Random per-install identifier; the server stores only a salted digest.
+          schema: { type: string, maxLength: 128 }
       requestBody:
         required: true
         content:
@@ -581,6 +665,11 @@ paths:
       operationId: cancelAppointment
       tags: [salon]
       parameters:
+        - in: header
+          name: X-Device-ID
+          required: false
+          description: Random per-install identifier used only for aggregate abuse review.
+          schema: { type: string, maxLength: 128 }
         - in: path
           name: id
           required: true
@@ -1144,7 +1233,7 @@ components:
         paymentMethod:
           type: string
           enum: [bit, cash_at_shop]
-        status: { type: string }
+        status: { type: string, enum: [confirmed, pending_approval, rejected, cancelled, completed, no_show] }
         confirmationSent: { type: boolean }
         reminderSent: { type: boolean }
         reminderOneHourSent: { type: boolean }
@@ -1162,6 +1251,58 @@ components:
         appointment:
           $ref: "#/components/schemas/Appointment"
         whatsappUrl: { type: string, format: uri }
+    AppointmentDecisionInput:
+      type: object
+      required: [decision]
+      properties:
+        decision: { type: string, enum: [approve, reject] }
+        reason: { type: string, maxLength: 500 }
+    AppointmentDecisionResult:
+      type: object
+      required: [appointment, decision]
+      properties:
+        appointment:
+          $ref: "#/components/schemas/Appointment"
+        decision: { type: string, enum: [approve, reject] }
+        sent: { type: boolean }
+    AppointmentStatusInput:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [completed, no_show] }
+    AntiAbusePolicy:
+      type: object
+      required: [maxFutureConfirmedAppointments, dailyBookingLimit, dailyCancellationLimit, repeatedIncidentThreshold, incidentWindowDays, lateCancellationWindowHours]
+      properties:
+        maxFutureConfirmedAppointments: { type: integer, minimum: 1 }
+        dailyBookingLimit: { type: integer, minimum: 1 }
+        dailyCancellationLimit: { type: integer, minimum: 1 }
+        repeatedIncidentThreshold: { type: integer, minimum: 1 }
+        incidentWindowDays: { type: integer, minimum: 1 }
+        lateCancellationWindowHours: { type: integer, minimum: 1 }
+    AntiAbuseNotification:
+      type: object
+      required: [id, kind, bookingCount, distinctPhones, lastSeenAt, message, autoRestricted]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [phone_burst, shared_device, cancellation_rate] }
+        phone: { type: string }
+        deviceHint: { type: string, description: "Short digest hint only; never the raw device ID." }
+        bookingCount: { type: integer }
+        distinctPhones: { type: integer }
+        lastSeenAt: { type: string, format: date-time }
+        message: { type: string }
+        autoRestricted: { type: boolean, const: false }
+    AntiAbuseNotifications:
+      type: object
+      required: [policy, notifications]
+      properties:
+        policy:
+          $ref: "#/components/schemas/AntiAbusePolicy"
+        notifications:
+          type: array
+          items:
+            $ref: "#/components/schemas/AntiAbuseNotification"
     ScheduleSlotInput:
       type: object
       required: [dayOfWeek, time, active]
