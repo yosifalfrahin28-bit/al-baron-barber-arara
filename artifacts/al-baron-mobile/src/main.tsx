@@ -17,7 +17,6 @@ import Admin from "./pages/Admin";
 import TvDisplay from "./pages/TvDisplay";
 import WhatsAppQr from "./pages/WhatsAppQr";
 import WhatsAppSetup from "./pages/WhatsAppSetup";
-import WhatsAppPairingQr from "./components/WhatsAppPairingQr";
 import Reviews from "./pages/Reviews";
 import NotFound from "./pages/NotFound";
 import { Share2, X } from "lucide-react";
@@ -282,7 +281,6 @@ function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-
                   </button>
                 )}
               </form>
-              {step === 'details' && <WhatsAppPairingQr compact />}
             </>
           ) : (
             <div className="text-center">
