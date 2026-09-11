@@ -1,4 +1,190 @@
- peopleAhead = 0) {
+import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
+import { and, asc, count, desc, eq, inArray, isNull, max, sql } from "drizzle-orm";
+import { db } from "@workspace/db";
+import {
+  salonAppointments,
+  salonAuthChallenges,
+  salonAuthSessions,
+  salonBroadcastRecipients,
+  salonBroadcasts,
+  salonMessageTemplates,
+  salonReviews,
+  salonAgeCategories,
+  salonProducts,
+  salonShopInfo,
+  salonServices,
+  salonScheduleSlots,
+  salonSettings,
+  salonTickets,
+  salonUsers,
+} from "@workspace/db/schema";
+import {
+  clearSessionCookie,
+  BANNED_BOOKING_MESSAGE,
+  createPhoneChallenge,
+  createSession,
+  getSessionToken,
+  getSessionUser,
+  hashPassword,
+  normalizePhone,
+  isValidIsraeliPhone,
+  requireAdmin,
+  requireAuth,
+  requireBookingAccess,
+  sendPhoneCode,
+  setSessionCookie,
+  sendWelcomeMessage,
+  upsertPhoneUser,
+  verifyPassword,
+  verifyPhoneChallenge,
+} from "../middleware/auth";
+import { logger } from "../lib/logger";
+import { getWhatsAppStatus, sendWhatsAppMessage } from "../integrations/whatsapp";
+import {
+  DEFAULT_MESSAGE_TEMPLATES,
+  MESSAGE_TEMPLATE_LABELS,
+  getMessageTemplate,
+  renderMessage,
+  seedMessageTemplates,
+  type MessageTemplateKey,
+} from "../lib/message-templates";
+
+const router: IRouter = Router();
+
+const id = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+const text = (value: unknown, fallback = "") => typeof value === "string" ? value.trim() : fallback;
+const number = (value: unknown, fallback = 0) => typeof value === "number" && Number.isFinite(value) ? Math.round(value) : fallback;
+const bool = (value: unknown, fallback = true) => typeof value === "boolean" ? value : fallback;
+const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+const defaultServices = [
+  { id: "haircut", name: "قص شعر مودرن", description: "قصّة دقيقة مع تدريج احترافي", price: 60, duration: 30, visible: true },
+  { id: "beard", name: "تهذيب لحية فاخر", description: "تحديد وتشكيل بالموس الحار", price: 45, duration: 25, visible: true },
+  { id: "steam", name: "عناية بالبشرة", description: "بخار وتنظيف وترطيب عميق", price: 80, duration: 35, visible: true },
+  { id: "vip", name: "باقة VIP", description: "شعر + لحية + عناية بالبشرة", price: 150, duration: 75, visible: true },
+];
+
+const defaultCustomerServices = [
+  { id: "customer-hair", name: "شعر", description: "قص شعر وتصفيف احترافي", price: 60, duration: 30, visible: true },
+  { id: "customer-beard", name: "دقن", description: "تهذيب وتحديد اللحية", price: 45, duration: 25, visible: true },
+  { id: "customer-hair-beard", name: "شعر ولحية", description: "قص شعر مع تهذيب اللحية", price: 95, duration: 50, visible: true },
+];
+
+const defaultAgeCategories = [
+  { id: "child", name: "أطفال", minAge: 0, maxAge: 12, additionalMinutes: 10, active: true, sortOrder: 0 },
+  { id: "teen", name: "شباب", minAge: 13, maxAge: 17, additionalMinutes: 20, active: true, sortOrder: 1 },
+  { id: "adult", name: "بالغون", minAge: 18, maxAge: 59, additionalMinutes: 25, active: true, sortOrder: 2 },
+  { id: "senior", name: "كبار السن", minAge: 60, maxAge: null, additionalMinutes: 25, active: true, sortOrder: 3 },
+];
+
+async function ensureSeeded() {
+  let [settings] = await db.select().from(salonSettings).where(eq(salonSettings.id, 1)).limit(1);
+  if (!settings) {
+    [settings] = await db.insert(salonSettings).values({ id: 1, shopOpen: true, servicesSeeded: false }).returning();
+  }
+  const serviceRows = await db.select({ id: salonServices.id }).from(salonServices).limit(1);
+  if (!settings.servicesSeeded && serviceRows.length === 0) {
+    await db.insert(salonServices).values([...defaultServices, ...defaultCustomerServices]);
+    await db.update(salonSettings).set({ servicesSeeded: true, updatedAt: new Date() }).where(eq(salonSettings.id, 1));
+  } else if (!settings.servicesSeeded && serviceRows.length > 0) {
+    await db.update(salonSettings).set({ servicesSeeded: true, updatedAt: new Date() }).where(eq(salonSettings.id, 1));
+  }
+  const existingServiceIds = new Set((await db.select({ id: salonServices.id }).from(salonServices)).map((service) => service.id));
+  const missingCustomerServices = defaultCustomerServices.filter((service) => !existingServiceIds.has(service.id));
+  if (missingCustomerServices.length > 0) await db.insert(salonServices).values(missingCustomerServices);
+  const ageCategoryRows = await db.select({ id: salonAgeCategories.id }).from(salonAgeCategories).limit(1);
+  if (ageCategoryRows.length === 0) await db.insert(salonAgeCategories).values(defaultAgeCategories);
+  const storedAgeCategories = await db.select().from(salonAgeCategories);
+  for (const category of storedAgeCategories) {
+    if (category.additionalMinutes === null) {
+      const defaultCategory = defaultAgeCategories.find((item) => item.id === category.id || item.name === category.name);
+      await db.update(salonAgeCategories)
+        .set({ additionalMinutes: defaultCategory?.additionalMinutes ?? 25, updatedAt: new Date() })
+        .where(and(eq(salonAgeCategories.id, category.id), isNull(salonAgeCategories.additionalMinutes)));
+    }
+  }
+  const shopInfoRows = await db.select({ id: salonShopInfo.id }).from(salonShopInfo).where(eq(salonShopInfo.id, 1)).limit(1);
+  if (shopInfoRows.length === 0) await db.insert(salonShopInfo).values({ id: 1 });
+  const ticketRows = await db.select({ id: salonTickets.id }).from(salonTickets).limit(1);
+  const scheduleRows = await db.select().from(salonScheduleSlots);
+  if (scheduleRows.length === 0) {
+    await db.insert(salonScheduleSlots).values(
+      Array.from({ length: 7 }, (_, dayOfWeek) =>
+        defaultScheduleTimes.map((time) => ({
+          id: id("schedule"),
+          dayOfWeek,
+          time,
+          active: true,
+        })),
+      ).flat(),
+    );
+  } else {
+    const legacySlots = scheduleRows.filter((slot) => !isTwentyMinuteGridTime(slot.time) && slot.active);
+    const hasLegacySlots = scheduleRows.some((slot) => !isTwentyMinuteGridTime(slot.time));
+    if (hasLegacySlots) {
+      if (legacySlots.length > 0) {
+        await db.update(salonScheduleSlots)
+          .set({ active: false, updatedAt: new Date() })
+          .where(inArray(salonScheduleSlots.id, legacySlots.map((slot) => slot.id)));
+      }
+      const existingKeys = new Set(scheduleRows.map((slot) => `${slot.dayOfWeek}:${slot.time}`));
+      const gridSlots = Array.from({ length: 7 }, (_, dayOfWeek) =>
+        defaultScheduleTimes
+          .filter((time) => !existingKeys.has(`${dayOfWeek}:${time}`))
+          .map((time) => ({
+            id: id("schedule"),
+            dayOfWeek,
+            time,
+            active: true,
+          })),
+      ).flat();
+      if (gridSlots.length > 0) await db.insert(salonScheduleSlots).values(gridSlots);
+    }
+  }
+  await seedMessageTemplates();
+}
+
+function mapService(service: typeof salonServices.$inferSelect) {
+  return { id: service.id, name: service.name, description: service.description, price: service.price, duration: service.duration, visible: service.visible };
+}
+
+function mapAgeCategory(category: typeof salonAgeCategories.$inferSelect) {
+  return {
+    id: category.id,
+    name: category.name,
+    minAge: category.minAge,
+    maxAge: category.maxAge,
+    additionalMinutes: category.additionalMinutes ?? 25,
+    active: category.active,
+    sortOrder: category.sortOrder,
+  };
+}
+
+function mapProduct(product: typeof salonProducts.$inferSelect) {
+  return {
+    id: product.id,
+    name: product.name,
+    description: product.description,
+    price: product.price,
+    stock: product.stock,
+    active: product.active,
+  };
+}
+
+function mapShopInfo(info: typeof salonShopInfo.$inferSelect) {
+  return {
+    shopName: info.shopName,
+    phone: info.phone,
+    whatsapp: info.whatsapp,
+    address: info.address,
+    mapsUrl: info.mapsUrl,
+    instagramUrl: info.instagramUrl,
+    bitLink: info.bitLink,
+    openingHours: info.openingHours,
+  };
+}
+
+function mapTicket(ticket: typeof salonTickets.$inferSelect, queuePosition = 0, peopleAhead = 0) {
   let participantCategories = Array.from(
     { length: Math.max(1, ticket.guestCount) },
     (_, index) => index === 0 ? ticket.ageCategory : "بالغون",
