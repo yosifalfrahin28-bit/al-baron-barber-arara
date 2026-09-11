@@ -8,13 +8,14 @@ import { trackEvent } from '@/lib/analytics';
 
 export default function Account() {
   const [, setLocation] = useLocation();
-  const { profile, setProfile, activeTicket, appointments, lastReminderAt, summon, cancelTicket } = useSalon();
+  const { profile, setProfile, activeTicket, appointments, lastReminderAt, summon, cancelTicket, cancelAppointment } = useSalon();
   const { signOut } = usePhoneAuth();
   
   const [name, setName] = useState(profile.name);
   const [phone] = useState(profile.phone);
   const [note, setNote] = useState(profile.note);
   const [editing, setEditing] = useState(false);
+  const [cancellingAppointmentId, setCancellingAppointmentId] = useState<string | null>(null);
   
   const save = () => { 
     setProfile({ name, phone, note }); 
@@ -133,7 +134,8 @@ export default function Account() {
             <div className="text-center text-xs text-muted-foreground p-4">لا يوجد سجل زيارات</div>
           ) : (
             appointments.map((appointment) => (
-              <Card key={appointment.id} className="flex flex-row-reverse items-center gap-3 p-4">
+              <Card key={appointment.id} className="p-4">
+                <div className="flex flex-row-reverse items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
                   <CalendarIcon size={18} className="text-primary" />
                 </div>
@@ -141,9 +143,29 @@ export default function Account() {
                   <div className="text-sm font-bold text-foreground">{appointment.service}</div>
                   <div className="text-[11px] mt-1 text-muted-foreground">{appointment.date} · {appointment.time} · {appointment.barber}</div>
                 </div>
-                <div className={cn("text-xs font-bold", appointment.status === 'completed' ? "text-success" : appointment.status === 'cancelled' ? "text-destructive" : "text-primary")}>
-                  {appointment.status === 'completed' ? 'مكتمل' : appointment.status === 'cancelled' ? 'ملغى' : 'مؤكد'}
+                <div className={cn("text-xs font-bold", appointment.status === 'completed' ? "text-success" : appointment.status === 'cancelled' || appointment.status === 'rejected' ? "text-destructive" : appointment.status === 'pending_approval' ? "text-amber-600" : "text-primary")}>
+                  {appointment.status === 'completed' ? 'مكتمل' : appointment.status === 'cancelled' ? 'ملغى' : appointment.status === 'rejected' ? 'مرفوض' : appointment.status === 'pending_approval' ? 'بانتظار المراجعة' : appointment.status === 'no_show' ? 'غياب' : 'مؤكد'}
                 </div>
+                </div>
+                {(appointment.status === 'confirmed' || appointment.status === 'pending_approval') && (
+                  <button
+                    type="button"
+                    disabled={cancellingAppointmentId === appointment.id}
+                    onClick={() => {
+                      if (!window.confirm('هل تريد إلغاء هذا الطلب؟')) return;
+                      setCancellingAppointmentId(appointment.id);
+                      void cancelAppointment(appointment.id, 'طلب العميل')
+                        .catch((error) => {
+                          alert(error instanceof Error ? error.message : 'تعذر إلغاء الموعد حالياً.');
+                        })
+                        .finally(() => setCancellingAppointmentId(null));
+                    }}
+                    className="mt-3 flex min-h-10 w-full flex-row-reverse items-center justify-center gap-2 rounded-xl border border-destructive/30 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
+                  >
+                    <X size={15} />
+                    {cancellingAppointmentId === appointment.id ? 'جارٍ الإلغاء...' : 'إلغاء الموعد أو الطلب'}
+                  </button>
+                )}
               </Card>
             ))
           )}

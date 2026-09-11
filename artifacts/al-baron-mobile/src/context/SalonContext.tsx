@@ -77,7 +77,7 @@ type SalonContextValue = {
   setProfile: (profile: LocalProfile) => void;
   setSelectedStyle: (style: string | null) => void;
   joinQueue: (details: { service: string; barber: string; ageCategory?: string; guestCount?: number; participantCategories?: string[]; paymentMethod?: 'bit' | 'cash_at_shop' }) => Promise<void>;
-  bookAppointment: (details: { date: string; time: string; barber: string; service: string; ageCategory?: string; guestCount?: number; participantCategories?: string[]; paymentMethod?: 'bit' | 'cash_at_shop' }) => Promise<void>;
+  bookAppointment: (details: { date: string; time: string; barber: string; service: string; ageCategory?: string; guestCount?: number; participantCategories?: string[]; paymentMethod?: 'bit' | 'cash_at_shop' }) => Promise<Appointment>;
   advanceQueue: () => Promise<void>;
   cancelTicket: (id?: string, source?: 'account' | 'admin') => void;
   addWalkIn: (name: string) => void;
@@ -91,7 +91,7 @@ type SalonContextValue = {
   addScheduleSlot: (slot: { dayOfWeek: number; time: string; active: boolean }) => Promise<void>;
   updateScheduleSlot: (id: string, slot: { dayOfWeek: number; time: string; active: boolean }) => Promise<void>;
   toggleScheduleSlot: (slot: ScheduleSlot) => Promise<void>;
-  cancelAppointment: (id: string, reason: string, onSuccess?: (whatsappUrl: string) => void) => void;
+  cancelAppointment: (id: string, reason: string, onSuccess?: (whatsappUrl: string) => void) => Promise<void>;
   saveAgeCategory: (category: AgeCategory) => Promise<void>;
   deleteAgeCategory: (id: string) => Promise<void>;
   saveProduct: (product: Product) => Promise<void>;
@@ -168,7 +168,7 @@ export function SalonProvider({ children }: { children: ReactNode }) {
     await refreshState();
   };
   
-  const bookAppointment = async (details: { date: string; time: string; barber: string; service: string; ageCategory?: string; guestCount?: number; participantCategories?: string[]; paymentMethod?: 'bit' | 'cash_at_shop' }): Promise<void> => {
+  const bookAppointment = async (details: { date: string; time: string; barber: string; service: string; ageCategory?: string; guestCount?: number; participantCategories?: string[]; paymentMethod?: 'bit' | 'cash_at_shop' }): Promise<Appointment> => {
     const selectedService = services.find((item) => item.name === details.service);
     const createdAppointment = await sessionJson<Appointment>('/api/appointments', 'POST', details);
     queryClient.setQueryData<SalonState>(getGetSalonStateQueryKey(), (current) => current ? {
@@ -182,6 +182,7 @@ export function SalonProvider({ children }: { children: ReactNode }) {
       has_style_reference: Boolean(selectedStyle),
     });
     await refreshState();
+    return createdAppointment;
   };
   
   const advanceQueue = async (): Promise<void> => {
@@ -310,15 +311,15 @@ export function SalonProvider({ children }: { children: ReactNode }) {
     await updateScheduleSlot(slot.id, { dayOfWeek: slot.dayOfWeek, time: slot.time, active: !slot.active });
   };
 
-  const cancelAppointment = (id: string, reason: string, onSuccess?: (whatsappUrl: string) => void) => {
-    void sessionJson<{ appointment: Appointment; whatsappUrl: string }>(`/api/appointments/${id}/cancel`, 'POST', { reason })
+  const cancelAppointment = (id: string, reason: string, onSuccess?: (whatsappUrl: string) => void): Promise<void> => {
+    return sessionJson<{ appointment: Appointment; whatsappUrl: string }>(`/api/appointments/${id}/cancel`, 'POST', { reason })
       .then((result) => {
         queryClient.setQueryData<SalonState>(getGetSalonStateQueryKey(), (current) => current ? {
           ...current,
           appointments: current.appointments.map((appointment) => appointment.id === result.appointment.id ? result.appointment : appointment),
         } : current);
-        refreshState();
         onSuccess?.(result.whatsappUrl);
+        return refreshState();
       });
   };
 

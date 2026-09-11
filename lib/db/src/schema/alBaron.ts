@@ -1,5 +1,6 @@
 import {
   boolean,
+  index,
   integer,
   pgTable,
   text,
@@ -28,6 +29,31 @@ export const salonUsers = pgTable(
   },
   (table) => ({
     phoneIndex: uniqueIndex("salon_users_phone_idx").on(table.phone),
+  }),
+);
+
+/**
+ * Durable anti-abuse audit trail. Device IDs are never stored in their
+ * client-provided form: the API stores only a salted SHA-256 digest of the
+ * random per-install ID. This table is intentionally append-only; it is used
+ * for rate limits, review queues, and customer-support decisions.
+ */
+export const salonAbuseEvents = pgTable(
+  "salon_abuse_events",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id"),
+    phone: text("phone").notNull(),
+    eventType: text("event_type").notNull(),
+    dateKey: text("date_key").notNull(),
+    deviceHash: text("device_hash").notNull().default(""),
+    metadata: text("metadata").notNull().default("{}"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    userDateIndex: index("salon_abuse_events_user_date_idx").on(table.userId, table.dateKey),
+    phoneCreatedIndex: index("salon_abuse_events_phone_created_idx").on(table.phone, table.createdAt),
+    deviceCreatedIndex: index("salon_abuse_events_device_created_idx").on(table.deviceHash, table.createdAt),
   }),
 );
 

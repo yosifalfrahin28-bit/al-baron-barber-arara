@@ -113,7 +113,7 @@ export const GetSalonStateResponse = zod.object({
   "guestCount": zod.number().int().min(1),
   "participantCategories": zod.array(zod.string()).min(1),
   "paymentMethod": zod.enum(['bit', 'cash_at_shop']),
-  "status": zod.string(),
+  "status": zod.enum(['confirmed', 'pending_approval', 'rejected', 'cancelled', 'completed', 'no_show']),
   "confirmationSent": zod.boolean(),
   "reminderSent": zod.boolean(),
   "reminderOneHourSent": zod.boolean(),
@@ -324,7 +324,7 @@ export const ListAdminAppointmentsResponseItem = zod.object({
   "guestCount": zod.number().int().min(1),
   "participantCategories": zod.array(zod.string()).min(1),
   "paymentMethod": zod.enum(['bit', 'cash_at_shop']),
-  "status": zod.string(),
+  "status": zod.enum(['confirmed', 'pending_approval', 'rejected', 'cancelled', 'completed', 'no_show']),
   "confirmationSent": zod.boolean(),
   "reminderSent": zod.boolean(),
   "reminderOneHourSent": zod.boolean(),
@@ -333,6 +333,142 @@ export const ListAdminAppointmentsResponseItem = zod.object({
   "createdAt": zod.coerce.date()
 })
 export const ListAdminAppointmentsResponse = zod.array(ListAdminAppointmentsResponseItem)
+
+
+/**
+ * @summary Approve or reject a pending appointment with a transactional slot recheck
+ */
+export const ReviewAppointmentParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const reviewAppointmentBodyReasonMax = 500;
+
+
+
+export const ReviewAppointmentBody = zod.object({
+  "decision": zod.enum(['approve', 'reject']),
+  "reason": zod.string().max(reviewAppointmentBodyReasonMax).optional()
+})
+
+
+
+
+
+export const ReviewAppointmentResponse = zod.object({
+  "appointment": zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "phone": zod.string(),
+  "date": zod.string(),
+  "time": zod.string(),
+  "barber": zod.string(),
+  "service": zod.string(),
+  "guestCount": zod.number().int().min(1),
+  "participantCategories": zod.array(zod.string()).min(1),
+  "paymentMethod": zod.enum(['bit', 'cash_at_shop']),
+  "status": zod.enum(['confirmed', 'pending_approval', 'rejected', 'cancelled', 'completed', 'no_show']),
+  "confirmationSent": zod.boolean(),
+  "reminderSent": zod.boolean(),
+  "reminderOneHourSent": zod.boolean(),
+  "reminderTwentyMinuteSent": zod.boolean(),
+  "reviewRequestSent": zod.boolean(),
+  "createdAt": zod.coerce.date()
+}),
+  "decision": zod.enum(['approve', 'reject']),
+  "sent": zod.boolean().optional()
+})
+
+
+/**
+ * @summary Mark a confirmed appointment completed or no-show
+ */
+export const UpdateAppointmentStatusParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const UpdateAppointmentStatusBody = zod.object({
+  "status": zod.enum(['completed', 'no_show'])
+})
+
+
+
+
+
+export const UpdateAppointmentStatusResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "phone": zod.string(),
+  "date": zod.string(),
+  "time": zod.string(),
+  "barber": zod.string(),
+  "service": zod.string(),
+  "guestCount": zod.number().int().min(1),
+  "participantCategories": zod.array(zod.string()).min(1),
+  "paymentMethod": zod.enum(['bit', 'cash_at_shop']),
+  "status": zod.enum(['confirmed', 'pending_approval', 'rejected', 'cancelled', 'completed', 'no_show']),
+  "confirmationSent": zod.boolean(),
+  "reminderSent": zod.boolean(),
+  "reminderOneHourSent": zod.boolean(),
+  "reminderTwentyMinuteSent": zod.boolean(),
+  "reviewRequestSent": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Read the explicit customer booking protection thresholds
+ */
+
+
+
+
+
+
+
+
+export const GetAntiAbusePolicyResponse = zod.object({
+  "maxFutureConfirmedAppointments": zod.number().int().min(1),
+  "dailyBookingLimit": zod.number().int().min(1),
+  "dailyCancellationLimit": zod.number().int().min(1),
+  "repeatedIncidentThreshold": zod.number().int().min(1),
+  "incidentWindowDays": zod.number().int().min(1),
+  "lateCancellationWindowHours": zod.number().int().min(1)
+})
+
+
+/**
+ * @summary List repeated phone/device booking signals for human review
+ */
+
+
+
+
+
+
+
+
+export const ListAntiAbuseNotificationsResponse = zod.object({
+  "policy": zod.object({
+  "maxFutureConfirmedAppointments": zod.number().int().min(1),
+  "dailyBookingLimit": zod.number().int().min(1),
+  "dailyCancellationLimit": zod.number().int().min(1),
+  "repeatedIncidentThreshold": zod.number().int().min(1),
+  "incidentWindowDays": zod.number().int().min(1),
+  "lateCancellationWindowHours": zod.number().int().min(1)
+}),
+  "notifications": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['phone_burst', 'shared_device', 'cancellation_rate']),
+  "phone": zod.string().optional(),
+  "deviceHint": zod.string().optional().describe('Short digest hint only; never the raw device ID.'),
+  "bookingCount": zod.number().int(),
+  "distinctPhones": zod.number().int(),
+  "lastSeenAt": zod.coerce.date(),
+  "message": zod.string(),
+  "autoRestricted": zod.literal(false)
+}))
+})
 
 
 /**
@@ -591,6 +727,14 @@ export const UpdateReviewStatusResponse = zod.object({
 })
 
 
+export const createTicketHeaderXDeviceIDMax = 128;
+
+
+
+export const CreateTicketHeader = zod.object({
+  "X-Device-ID": zod.string().max(createTicketHeaderXDeviceIDMax).optional().describe('Random per-install identifier; never a browser fingerprint and never an automatic ban signal.')
+})
+
 export const createTicketBodyGuestCountDefault = 1;
 export const createTicketBodyGuestCountMax = 8;
 
@@ -757,7 +901,7 @@ export const ListAppointmentsResponseItem = zod.object({
   "guestCount": zod.number().int().min(1),
   "participantCategories": zod.array(zod.string()).min(1),
   "paymentMethod": zod.enum(['bit', 'cash_at_shop']),
-  "status": zod.string(),
+  "status": zod.enum(['confirmed', 'pending_approval', 'rejected', 'cancelled', 'completed', 'no_show']),
   "confirmationSent": zod.boolean(),
   "reminderSent": zod.boolean(),
   "reminderOneHourSent": zod.boolean(),
@@ -767,6 +911,14 @@ export const ListAppointmentsResponseItem = zod.object({
 })
 export const ListAppointmentsResponse = zod.array(ListAppointmentsResponseItem)
 
+
+export const createAppointmentHeaderXDeviceIDMax = 128;
+
+
+
+export const CreateAppointmentHeader = zod.object({
+  "X-Device-ID": zod.string().max(createAppointmentHeaderXDeviceIDMax).optional().describe('Random per-install identifier; the server stores only a salted digest.')
+})
 
 export const createAppointmentBodyGuestCountDefault = 1;
 export const createAppointmentBodyGuestCountMax = 8;
@@ -801,7 +953,7 @@ export const CreateAppointmentResponse = zod.object({
   "guestCount": zod.number().int().min(1),
   "participantCategories": zod.array(zod.string()).min(1),
   "paymentMethod": zod.enum(['bit', 'cash_at_shop']),
-  "status": zod.string(),
+  "status": zod.enum(['confirmed', 'pending_approval', 'rejected', 'cancelled', 'completed', 'no_show']),
   "confirmationSent": zod.boolean(),
   "reminderSent": zod.boolean(),
   "reminderOneHourSent": zod.boolean(),
@@ -850,6 +1002,14 @@ export const CancelAppointmentParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const cancelAppointmentHeaderXDeviceIDMax = 128;
+
+
+
+export const CancelAppointmentHeader = zod.object({
+  "X-Device-ID": zod.string().max(cancelAppointmentHeaderXDeviceIDMax).optional().describe('Random per-install identifier used only for aggregate abuse review.')
+})
+
 export const cancelAppointmentBodyReasonMax = 500;
 
 
@@ -874,7 +1034,7 @@ export const CancelAppointmentResponse = zod.object({
   "guestCount": zod.number().int().min(1),
   "participantCategories": zod.array(zod.string()).min(1),
   "paymentMethod": zod.enum(['bit', 'cash_at_shop']),
-  "status": zod.string(),
+  "status": zod.enum(['confirmed', 'pending_approval', 'rejected', 'cancelled', 'completed', 'no_show']),
   "confirmationSent": zod.boolean(),
   "reminderSent": zod.boolean(),
   "reminderOneHourSent": zod.boolean(),

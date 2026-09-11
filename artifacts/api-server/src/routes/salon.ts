@@ -1,8 +1,10 @@
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
-import { and, asc, count, desc, eq, inArray, isNull, max, sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import { and, asc, count, desc, eq, gte, inArray, isNull, max, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   salonAppointments,
+  salonAbuseEvents,
   salonAuthChallenges,
   salonAuthSessions,
   salonBroadcastRecipients,
@@ -56,6 +58,14 @@ import {
   seedMessageTemplates,
   type MessageTemplateKey,
 } from "../lib/message-templates";
+import {
+  ANTI_ABUSE_POLICY,
+  appointmentRequestDisposition,
+  appointmentStatusBlocksTime,
+  cancellationDecision,
+  repeatedIncidentRequiresReview,
+  userBookingLockKey,
+} from "../lib/anti-abuse-policy";
 
 const router: IRouter = Router();
 
@@ -144,6 +154,140 @@ function cleanupPairingRateLimits() {
 
 const pairingRateLimitCleanup = setInterval(cleanupPairingRateLimits, PAIRING_RATE_WINDOW_MS);
 pairingRateLimitCleanup.unref?.();
+
+const RATE_LIMIT_BOOKING_EVENT = "booking_created";
+const RATE_LIMIT_CANCELLATION_EVENT = "cancellation_created";
+const BEHAVIOR_EVENTS = ["late_cancel", "no_show"] as const;
+
+function deviceHashFromRequest(req: Request) {
+  const raw = text(req.get("x-device-id"));
+  // The client generates a random UUID (not a fingerprint). Keep accepting a
+  // small opaque token for older app versions, but never store that token.
+  if (!raw || raw.length > 128 || /[\u0000-\u001f]/.test(raw)) return "";
+  const salt = process.env.DEVICE_ID_HASH_SECRET ?? "al-baron-random-device-id";
+  return createHash("sha256").update(`${salt}:${raw}`).digest("hex");
+}
+
+function salonDateKeyFor(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Jerusalem",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
+
+async function countAbuseEvents(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  userId: string,
+  eventType: string,
+  dateKey: string,
+) {
+  const [result] = await tx.select({ value: count() }).from(salonAbuseEvents).where(and(
+    eq(salonAbuseEvents.userId, userId),
+    eq(salonAbuseEvents.eventType, eventType),
+    eq(salonAbuseEvents.dateKey, dateKey),
+  ));
+  return Number(result?.value ?? 0);
+}
+
+async function recordAbuseEvent(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  input: {
+    userId: string;
+    phone: string;
+    eventType: string;
+    dateKey?: string;
+    deviceHash?: string;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  const [event] = await tx.insert(salonAbuseEvents).values({
+    id: id("abuse"),
+    userId: input.userId,
+    phone: input.phone,
+    eventType: input.eventType,
+    dateKey: input.dateKey ?? salonDateKeyFor(),
+    deviceHash: input.deviceHash ?? "",
+    metadata: JSON.stringify(input.metadata ?? {}),
+  }).returning();
+  return event;
+}
+
+class AntiAbuseRateLimitError extends Error {
+  readonly statusCode = 429;
+  readonly code = "ANTI_ABUSE_RATE_LIMITED";
+
+  constructor(message: string) {
+    super(message);
+  }
+}
+
+async function enforceDailyRateLimit(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  userId: string,
+  eventType: string,
+  limit: number,
+  message: string,
+) {
+  const dateKey = salonDateKeyFor();
+  const used = await countAbuseEvents(tx, userId, eventType, dateKey);
+  if (used >= limit) throw new AntiAbuseRateLimitError(message);
+  return dateKey;
+}
+
+async function cancellationRateStatus(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  userId: string,
+) {
+  const dateKey = salonDateKeyFor();
+  const used = await countAbuseEvents(tx, userId, RATE_LIMIT_CANCELLATION_EVENT, dateKey);
+  return { dateKey, ...cancellationDecision(used) };
+}
+
+async function recordCancellationRateAlert(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  input: { userId: string; phone: string; dateKey: string; deviceHash: string; appointmentId?: string; ticketId?: string },
+) {
+  await recordAbuseEvent(tx, {
+    userId: input.userId,
+    phone: input.phone,
+    eventType: "cancellation_rate_alert",
+    dateKey: input.dateKey,
+    deviceHash: input.deviceHash,
+    metadata: {
+      appointmentId: input.appointmentId,
+      ticketId: input.ticketId,
+      message: "daily cancellation threshold reached; future bookings require admin review",
+    },
+  });
+  await tx.update(salonUsers).set({
+    bookingRestricted: true,
+    accountNotice: "تم تسجيل 3 إلغاءات اليوم. يمكنك إلغاء مواعيدك الحالية، لكن الحجوزات الجديدة متوقفة حتى تراجع الإدارة الحساب.",
+    updatedAt: new Date(),
+  }).where(and(eq(salonUsers.id, input.userId), eq(salonUsers.role, "client")));
+}
+
+async function restrictAfterRepeatedIncidents(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  userId: string,
+) {
+  const cutoff = new Date(Date.now() - ANTI_ABUSE_POLICY.incidentWindowDays * 24 * 60 * 60 * 1000);
+  const [result] = await tx.select({ value: count() }).from(salonAbuseEvents).where(and(
+    eq(salonAbuseEvents.userId, userId),
+    inArray(salonAbuseEvents.eventType, [...BEHAVIOR_EVENTS]),
+    gte(salonAbuseEvents.createdAt, cutoff),
+  ));
+  if (!repeatedIncidentRequiresReview(Number(result?.value ?? 0))) return false;
+  await tx.update(salonUsers).set({
+    bookingRestricted: true,
+    accountNotice: "تم تقييد الحجز مؤقتاً بعد 3 حالات غياب أو إلغاء متأخر خلال 90 يوماً. يمكن للإدارة مراجعة الحساب ورفع التقييد.",
+    updatedAt: new Date(),
+  }).where(and(eq(salonUsers.id, userId), eq(salonUsers.role, "client")));
+  return true;
+}
 
 const defaultServices = [
   { id: "haircut", name: "قص شعر مودرن", description: "قصّة دقيقة مع تدريج احترافي", price: 60, duration: 30, visible: true },
@@ -476,6 +620,82 @@ class AppointmentTimeUnavailableError extends Error {
   constructor(message = "هذا الوقت محجوز أو يتعارض مع موعد آخر، اختر وقتاً مختلفاً") {
     super(message);
   }
+}
+
+function appointmentIsWithinCancellationWindow(date: string, time: string) {
+  const start = parseTimeMinutes(time);
+  if (start === null) return false;
+  const now = getSalonClock();
+  const today = new Date(`${now.date}T12:00:00.000Z`).getTime();
+  const appointmentDay = new Date(`${date}T12:00:00.000Z`).getTime();
+  if (!Number.isFinite(today) || !Number.isFinite(appointmentDay)) return false;
+  const dayDifference = Math.round((appointmentDay - today) / (24 * 60 * 60 * 1000));
+  const minutesUntil = dayDifference * 24 * 60 + start - now.minutes;
+  return minutesUntil > 0 && minutesUntil < ANTI_ABUSE_POLICY.lateCancellationWindowHours * 60;
+}
+
+async function ensureAppointmentAvailability(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  date: string,
+  time: string,
+  participantCategories: string[],
+  service: string,
+) {
+  const [services, categories, existingAppointments, scheduleSlots] = await Promise.all([
+    tx.select({ name: salonServices.name, duration: salonServices.duration }).from(salonServices),
+    tx.select({ name: salonAgeCategories.name, additionalMinutes: salonAgeCategories.additionalMinutes })
+      .from(salonAgeCategories)
+      .where(eq(salonAgeCategories.active, true)),
+    tx.select().from(salonAppointments).where(eq(salonAppointments.date, date)),
+    tx.select().from(salonScheduleSlots).where(and(
+      eq(salonScheduleSlots.dayOfWeek, dateDayOfWeek(date) ?? -1),
+      eq(salonScheduleSlots.active, true),
+    )),
+  ]);
+  const serviceDurations = new Map(services.map((item) => [item.name, item.duration]));
+  const categoryDurations = new Map(categories.map((item) => [
+    item.name,
+    item.additionalMinutes ?? defaultAdditionalMinutesForCategory(item.name),
+  ]));
+  if (!isTwentyMinuteGridTime(time)) {
+    throw new AppointmentTimeUnavailableError("اختر وقتاً متوافقاً مع شبكة المواعيد كل 20 دقيقة");
+  }
+  const requestedStart = parseTimeMinutes(time);
+  if (requestedStart === null) throw new AppointmentTimeUnavailableError();
+  const requestedDuration = appointmentDurationMinutes(service, participantCategories, serviceDurations, categoryDurations);
+  const requestedUnits = requestedDuration / 20;
+  const activeScheduleTimes = new Set(scheduleSlots.map((slot) => slot.time));
+  const requestedSlots = Array.from({ length: requestedUnits }, (_, index) => requestedStart + index * 20);
+  if (requestedSlots.some((slot) => !activeScheduleTimes.has(`${String(Math.floor(slot / 60)).padStart(2, "0")}:${String(slot % 60).padStart(2, "0")}`))) {
+    throw new AppointmentTimeUnavailableError("لا توجد أوقات متتالية كافية لهذا الحجز، اختر وقتاً مختلفاً");
+  }
+  const requestedEnd = requestedStart + requestedDuration;
+  const overlaps = existingAppointments.some((existing) => {
+    if (!appointmentStatusBlocksTime(existing.status)) return false;
+    const existingStart = parseTimeMinutes(existing.time);
+    if (existingStart === null) return false;
+    let existingParticipants = Array.from(
+      { length: Math.max(1, existing.guestCount) },
+      (_, index) => index === 0 ? existing.ageCategory : "بالغون",
+    );
+    try {
+      const parsed = JSON.parse(existing.participantCategories);
+      if (
+        Array.isArray(parsed)
+        && parsed.every((item) => typeof item === "string")
+        && parsed.length > 0
+        && (parsed.length === existing.guestCount || existing.guestCount === 1)
+      ) {
+        existingParticipants = parsed;
+      }
+    } catch {
+      // Older rows use the original single-person duration.
+    }
+    const existingEnd = existingStart + appointmentDurationMinutes(existing.service, existingParticipants, serviceDurations, categoryDurations);
+    return requestedStart < existingEnd && existingStart < requestedEnd;
+  });
+  if (overlaps) throw new AppointmentTimeUnavailableError();
+  return { requestedStart, requestedDuration };
 }
 
 function mapScheduleSlot(slot: typeof salonScheduleSlots.$inferSelect) {
@@ -1130,23 +1350,54 @@ router.post("/tickets", requireAuth, requireBookingAccess, async (req, res, next
       return res.status(400).json({ message: "طريقة الدفع غير صالحة" });
     }
     if (!phone || !name) return res.status(400).json({ message: "phone and name are required" });
-    const [highest] = await db.select({ value: max(salonTickets.number) }).from(salonTickets);
-    const [ticket] = await db.insert(salonTickets).values({
-      id: id("ticket"),
-      number: (highest?.value ?? 0) + 1,
-      userId: req.salonUser!.id,
-      name,
-      phone,
-      barber,
-      service,
-      ageCategory,
-      guestCount: participantCategories.length,
-      participantCategories: JSON.stringify(participantCategories),
-      paymentMethod,
-      status: "waiting",
-    }).returning();
+    const deviceHash = deviceHashFromRequest(req);
+    const [ticket] = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userBookingLockKey(req.salonUser!.id)}))`);
+      const [activeTicket] = await tx.select({ id: salonTickets.id }).from(salonTickets).where(and(
+        eq(salonTickets.userId, req.salonUser!.id),
+        inArray(salonTickets.status, ["waiting", "serving"]),
+      )).limit(1);
+      if (activeTicket) {
+        throw new AntiAbuseRateLimitError("لديك دور نشط بالفعل. ألغِ الدور الحالي قبل الانضمام مرة أخرى");
+      }
+      const dateKey = await enforceDailyRateLimit(
+        tx,
+        req.salonUser!.id,
+        RATE_LIMIT_BOOKING_EVENT,
+        ANTI_ABUSE_POLICY.dailyBookingLimit,
+        "تم الوصول إلى حد الحجوزات اليومية (5). حاول غداً أو تواصل مع الصالون.",
+      );
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('salon-ticket-number'))`);
+      const [highest] = await tx.select({ value: max(salonTickets.number) }).from(salonTickets);
+      const [created] = await tx.insert(salonTickets).values({
+        id: id("ticket"),
+        number: (highest?.value ?? 0) + 1,
+        userId: req.salonUser!.id,
+        name,
+        phone,
+        barber,
+        service,
+        ageCategory,
+        guestCount: participantCategories.length,
+        participantCategories: JSON.stringify(participantCategories),
+        paymentMethod,
+        status: "waiting",
+      }).returning();
+      await recordAbuseEvent(tx, {
+        userId: req.salonUser!.id,
+        phone,
+        eventType: RATE_LIMIT_BOOKING_EVENT,
+        dateKey,
+        deviceHash,
+        metadata: { bookingType: "queue", ticketId: created.id },
+      });
+      return [created];
+    });
     res.status(201).json(mapTicket(ticket));
   } catch (error) {
+    if (error instanceof AntiAbuseRateLimitError) {
+      return res.status(error.statusCode).json({ code: error.code, message: error.message });
+    }
     return next(error);
   }
 });
@@ -1156,10 +1407,47 @@ router.post("/tickets/:id/cancel", requireAuth, async (req, res, next) => {
     const [existing] = await db.select().from(salonTickets).where(eq(salonTickets.id, text(req.params.id))).limit(1);
     if (!existing) return res.status(404).json({ message: "ticket not found" });
     if (req.salonUser!.role !== "admin" && existing.userId !== req.salonUser!.id) return res.status(403).json({ message: "ticket access denied" });
-    const [ticket] = await db.update(salonTickets).set({ status: "cancelled", updatedAt: new Date() }).where(eq(salonTickets.id, text(req.params.id))).returning();
+    const [ticket] = await db.transaction(async (tx) => {
+      if (req.salonUser!.role !== "admin") {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userBookingLockKey(req.salonUser!.id)}))`);
+        const cancellationRate = await cancellationRateStatus(tx, req.salonUser!.id);
+        const deviceHash = deviceHashFromRequest(req);
+        const [updated] = await tx.update(salonTickets)
+          .set({ status: "cancelled", updatedAt: new Date() })
+          .where(and(eq(salonTickets.id, text(req.params.id)), inArray(salonTickets.status, ["waiting", "serving"])))
+          .returning();
+        if (updated) {
+          await recordAbuseEvent(tx, {
+            userId: req.salonUser!.id,
+            phone: req.salonUser!.phone,
+            eventType: RATE_LIMIT_CANCELLATION_EVENT,
+            dateKey: cancellationRate.dateKey,
+            deviceHash,
+            metadata: { bookingType: "queue", ticketId: updated.id },
+          });
+          if (cancellationRate.alert) {
+            await recordCancellationRateAlert(tx, {
+              userId: req.salonUser!.id,
+              phone: req.salonUser!.phone,
+              dateKey: cancellationRate.dateKey,
+              deviceHash,
+              ticketId: updated.id,
+            });
+          }
+        }
+        return [updated];
+      }
+      return tx.update(salonTickets)
+        .set({ status: "cancelled", updatedAt: new Date() })
+        .where(and(eq(salonTickets.id, text(req.params.id)), inArray(salonTickets.status, ["waiting", "serving"])))
+        .returning();
+    });
     if (!ticket) return res.status(404).json({ message: "ticket not found" });
     res.json(mapTicket(ticket));
   } catch (error) {
+    if (error instanceof AntiAbuseRateLimitError) {
+      return res.status(error.statusCode).json({ code: error.code, message: error.message });
+    }
     return next(error);
   }
 });
@@ -1261,7 +1549,8 @@ router.post("/appointments", requireAuth, requireBookingAccess, async (req, res,
       return res.status(400).json({ message: "طريقة الدفع غير صالحة" });
     }
     const requestedStart = parseTimeMinutes(time);
-    if (requestedStart === null || date === "اليوم") {
+    const salonClock = getSalonClock();
+    if (requestedStart === null || date === "اليوم" || !/^\d{4}-\d{2}-\d{2}$/.test(date) || date < salonClock.date) {
       return res.status(400).json({ message: "تاريخ ووقت الحجز غير صالحين" });
     }
     if (isAppointmentTooSoon(date, requestedStart)) {
@@ -1271,54 +1560,36 @@ router.post("/appointments", requireAuth, requireBookingAccess, async (req, res,
       });
     }
 
+    const deviceHash = deviceHashFromRequest(req);
     const [appointment] = await db.transaction(async (tx) => {
+      // User lock serializes max-two/rate-limit decisions. Date lock
+      // serializes the slot check with every other booking on that date.
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userBookingLockKey(req.salonUser!.id)}))`);
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`salon-appointments:${date}`}))`);
-       const [services, categories, existingAppointments, scheduleSlots] = await Promise.all([
-        tx.select({ name: salonServices.name, duration: salonServices.duration }).from(salonServices),
-         tx.select({ name: salonAgeCategories.name, additionalMinutes: salonAgeCategories.additionalMinutes }).from(salonAgeCategories).where(eq(salonAgeCategories.active, true)),
-        tx.select().from(salonAppointments).where(eq(salonAppointments.date, date)),
-         tx.select().from(salonScheduleSlots).where(and(eq(salonScheduleSlots.dayOfWeek, dateDayOfWeek(date) ?? -1), eq(salonScheduleSlots.active, true))),
-      ]);
-      const serviceDurations = new Map(services.map((item) => [item.name, item.duration]));
-       const categoryDurations = new Map(categories.map((item) => [item.name, item.additionalMinutes ?? defaultAdditionalMinutesForCategory(item.name)]));
-       if (!isTwentyMinuteGridTime(time)) {
-         throw new AppointmentTimeUnavailableError("اختر وقتاً متوافقاً مع شبكة المواعيد كل 20 دقيقة");
-       }
-       const requestedDuration = appointmentDurationMinutes(service, participantCategories, serviceDurations, categoryDurations);
-       const requestedUnits = requestedDuration / 20;
-       const activeScheduleTimes = new Set(scheduleSlots.map((slot) => slot.time));
-       const requestedSlots = Array.from({ length: requestedUnits }, (_, index) => requestedStart + index * 20);
-       if (requestedSlots.some((slot) => !activeScheduleTimes.has(`${String(Math.floor(slot / 60)).padStart(2, "0")}:${String(slot % 60).padStart(2, "0")}`))) {
-         throw new AppointmentTimeUnavailableError("لا توجد أوقات متتالية كافية لهذا الحجز، اختر وقتاً مختلفاً");
-       }
-       const requestedEnd = requestedStart + requestedDuration;
-      const overlaps = existingAppointments.some((existing) => {
-        if (existing.status === "cancelled") return false;
-        const existingStart = parseTimeMinutes(existing.time);
-        if (existingStart === null) return false;
-        let existingParticipants = Array.from(
-          { length: Math.max(1, existing.guestCount) },
-          (_, index) => index === 0 ? existing.ageCategory : "بالغون",
-        );
-        try {
-          const parsed = JSON.parse(existing.participantCategories);
-          if (
-            Array.isArray(parsed)
-            && parsed.every((item) => typeof item === "string")
-            && parsed.length > 0
-            && (parsed.length === existing.guestCount || existing.guestCount === 1)
-          ) {
-            existingParticipants = parsed;
-          }
-        } catch {
-          // Older rows use the original single-person duration.
-        }
-         const existingEnd = existingStart + appointmentDurationMinutes(existing.service, existingParticipants, serviceDurations, categoryDurations);
-        return requestedStart < existingEnd && existingStart < requestedEnd;
+      const bookingDateKey = await enforceDailyRateLimit(
+        tx,
+        req.salonUser!.id,
+        RATE_LIMIT_BOOKING_EVENT,
+        ANTI_ABUSE_POLICY.dailyBookingLimit,
+        "تم الوصول إلى حد الحجوزات اليومية (5). حاول غداً أو تواصل مع الصالون.",
+      );
+      // A conflict can never become a pending request: pending rows do not
+      // reserve time, but an admin must still be unable to approve a conflict.
+      await ensureAppointmentAvailability(tx, date, time, participantCategories, service);
+      const existingForUser = await tx.select().from(salonAppointments).where(eq(salonAppointments.userId, req.salonUser!.id));
+      const clock = getSalonClock();
+      const futureConfirmed = existingForUser.filter((row) =>
+        appointmentStatusBlocksTime(row.status)
+        && (row.date > clock.date || (row.date === clock.date && (parseTimeMinutes(row.time) ?? -1) > clock.minutes)),
+      );
+      const sameDayDuplicate = existingForUser.some((row) =>
+        row.date === date && row.status !== "cancelled" && row.status !== "rejected",
+      );
+      const appointmentStatus = appointmentRequestDisposition({
+        futureConfirmedCount: futureConfirmed.length,
+        sameDayDuplicate,
       });
-      if (overlaps) throw new AppointmentTimeUnavailableError();
-
-      return tx.insert(salonAppointments).values({
+      const [created] = await tx.insert(salonAppointments).values({
         id: id("appointment"),
         userId: req.salonUser!.id,
         date,
@@ -1331,31 +1602,46 @@ router.post("/appointments", requireAuth, requireBookingAccess, async (req, res,
         guestCount,
         participantCategories: JSON.stringify(participantCategories),
         paymentMethod,
-        status: "confirmed",
+        status: appointmentStatus,
       }).returning();
-    }).catch((error) => {
-      if (error instanceof AppointmentTimeUnavailableError) throw error;
-      throw error;
+      await recordAbuseEvent(tx, {
+        userId: req.salonUser!.id,
+        phone,
+        eventType: RATE_LIMIT_BOOKING_EVENT,
+        dateKey: bookingDateKey,
+        deviceHash,
+        metadata: {
+          bookingType: "appointment",
+          appointmentId: created.id,
+          status: created.status,
+          reason: futureConfirmed.length >= ANTI_ABUSE_POLICY.maxFutureConfirmedAppointments
+            ? "future_confirmed_limit"
+            : sameDayDuplicate ? "same_day_duplicate" : "standard",
+        },
+      });
+      return [created];
     });
     await db.update(salonUsers).set({ lastRebookingReminderAt: null, updatedAt: new Date() }).where(eq(salonUsers.id, req.salonUser!.id));
     let confirmationSent = false;
-    const confirmationTemplate = await getMessageTemplate("booking_confirmation");
-    const confirmationMessage = renderMessage(confirmationTemplate, {
-      name: appointment.name,
-      date: appointment.date,
-      time: appointment.time,
-      service: appointment.service,
-      barber: appointment.barber,
-    });
-    try {
-      confirmationSent = await sendWhatsAppMessage(appointment.phone, confirmationMessage);
-      if (confirmationSent) {
-        await db.update(salonAppointments)
-          .set({ confirmationSent: true, updatedAt: new Date() })
-          .where(and(eq(salonAppointments.id, appointment.id), eq(salonAppointments.confirmationSent, false)));
+    if (appointment.status === "confirmed") {
+      const confirmationTemplate = await getMessageTemplate("booking_confirmation");
+      const confirmationMessage = renderMessage(confirmationTemplate, {
+        name: appointment.name,
+        date: appointment.date,
+        time: appointment.time,
+        service: appointment.service,
+        barber: appointment.barber,
+      });
+      try {
+        confirmationSent = await sendWhatsAppMessage(appointment.phone, confirmationMessage);
+        if (confirmationSent) {
+          await db.update(salonAppointments)
+            .set({ confirmationSent: true, updatedAt: new Date() })
+            .where(and(eq(salonAppointments.id, appointment.id), eq(salonAppointments.confirmationSent, false)));
+        }
+      } catch (error) {
+        logger.warn({ err: error, appointmentId: appointment.id }, "Appointment confirmation WhatsApp message deferred");
       }
-    } catch (error) {
-      logger.warn({ err: error, appointmentId: appointment.id }, "Appointment confirmation WhatsApp message deferred");
     }
     const [savedAppointment] = await db.select().from(salonAppointments).where(eq(salonAppointments.id, appointment.id)).limit(1);
     res.status(201).json(mapAppointment(savedAppointment ?? { ...appointment, confirmationSent }));
@@ -1363,6 +1649,206 @@ router.post("/appointments", requireAuth, requireBookingAccess, async (req, res,
     if (error instanceof AppointmentTimeUnavailableError) {
       return res.status(error.statusCode).json({ code: error.code, message: error.message });
     }
+    if (error instanceof AntiAbuseRateLimitError) {
+      return res.status(error.statusCode).json({ code: error.code, message: error.message });
+    }
+    return next(error);
+  }
+});
+
+router.get("/admin/anti-abuse/policy", requireAuth, requireAdmin, (_req, res) => {
+  return res.json(ANTI_ABUSE_POLICY);
+});
+
+router.get("/admin/anti-abuse/notifications", requireAuth, requireAdmin, async (_req, res, next) => {
+  try {
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const [events, cancellationAlerts] = await Promise.all([
+      db.select().from(salonAbuseEvents).where(and(
+        eq(salonAbuseEvents.eventType, RATE_LIMIT_BOOKING_EVENT),
+        gte(salonAbuseEvents.createdAt, cutoff),
+      )),
+      db.select().from(salonAbuseEvents).where(and(
+        eq(salonAbuseEvents.eventType, "cancellation_rate_alert"),
+        gte(salonAbuseEvents.createdAt, cutoff),
+      )),
+    ]);
+    const byPhone = new Map<string, typeof events>();
+    const byDevice = new Map<string, typeof events>();
+    for (const event of events) {
+      const phoneEvents = byPhone.get(event.phone) ?? [];
+      phoneEvents.push(event);
+      byPhone.set(event.phone, phoneEvents);
+      if (event.deviceHash) {
+        const deviceEvents = byDevice.get(event.deviceHash) ?? [];
+        deviceEvents.push(event);
+        byDevice.set(event.deviceHash, deviceEvents);
+      }
+    }
+    const notifications: Array<{
+      id: string;
+       kind: "phone_burst" | "shared_device" | "cancellation_rate";
+      phone?: string;
+      deviceHint?: string;
+      bookingCount: number;
+      distinctPhones: number;
+      lastSeenAt: string;
+      message: string;
+      autoRestricted: false;
+    }> = [];
+    for (const event of cancellationAlerts) {
+      notifications.push({
+        id: event.id,
+        kind: "cancellation_rate",
+        phone: event.phone,
+        bookingCount: 0,
+        distinctPhones: 1,
+        lastSeenAt: event.createdAt.toISOString(),
+        message: "Daily cancellation threshold reached; future bookings are restricted pending admin review.",
+        autoRestricted: false,
+      });
+    }
+    for (const [phone, phoneEvents] of byPhone) {
+      if (phoneEvents.length >= 3) {
+        notifications.push({
+          id: `phone:${phone}`,
+          kind: "phone_burst",
+          phone,
+          bookingCount: phoneEvents.length,
+          distinctPhones: 1,
+          lastSeenAt: phoneEvents.reduce((latest, event) => event.createdAt > latest ? event.createdAt : latest, phoneEvents[0].createdAt).toISOString(),
+          message: `${phoneEvents.length} booking requests from the same phone in the last 24 hours`,
+          autoRestricted: false,
+        });
+      }
+    }
+    for (const [deviceHash, deviceEvents] of byDevice) {
+      const phones = new Set(deviceEvents.map((event) => event.phone));
+      // A shared device is a review signal only. It is never an automatic ban
+      // because families and shop staff may legitimately share a phone.
+      if (deviceEvents.length >= 3 && phones.size >= 2) {
+        notifications.push({
+          id: `device:${deviceHash}`,
+          kind: "shared_device",
+          deviceHint: deviceHash.slice(0, 10),
+          bookingCount: deviceEvents.length,
+          distinctPhones: phones.size,
+          lastSeenAt: deviceEvents.reduce((latest, event) => event.createdAt > latest ? event.createdAt : latest, deviceEvents[0].createdAt).toISOString(),
+          message: `${deviceEvents.length} booking requests from ${phones.size} phone accounts on one random device ID`,
+          autoRestricted: false,
+        });
+      }
+    }
+    return res.json({ policy: ANTI_ABUSE_POLICY, notifications });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post("/admin/appointments/:id/decision", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const appointmentId = text(req.params.id);
+    const decision = text(req.body?.decision);
+    const reason = text(req.body?.reason).slice(0, 500);
+    if (decision !== "approve" && decision !== "reject") {
+      return res.status(400).json({ code: "INVALID_APPOINTMENT_DECISION", message: "اختر الموافقة أو الرفض" });
+    }
+    const result = await db.transaction(async (tx) => {
+      const [pending] = await tx.select().from(salonAppointments)
+        .where(eq(salonAppointments.id, appointmentId))
+        .for("update")
+        .limit(1);
+      if (!pending) return { kind: "missing" as const };
+      if (pending.status !== "pending_approval") return { kind: "closed" as const, appointment: pending };
+      if (decision === "reject") {
+        const [rejected] = await tx.update(salonAppointments).set({
+          status: "rejected",
+          updatedAt: new Date(),
+        }).where(and(eq(salonAppointments.id, appointmentId), eq(salonAppointments.status, "pending_approval"))).returning();
+        return { kind: "rejected" as const, appointment: rejected };
+      }
+      const userLockKey = pending.userId ? userBookingLockKey(pending.userId) : `booking-phone:${pending.phone}`;
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userLockKey}))`);
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`salon-appointments:${pending.date}`}))`);
+      const requestedStart = parseTimeMinutes(pending.time);
+      if (requestedStart === null || pending.date < getSalonClock().date || isAppointmentTooSoon(pending.date, requestedStart)) {
+        return { kind: "unavailable" as const, appointment: pending };
+      }
+      let participants = Array.from({ length: Math.max(1, pending.guestCount) }, (_, index) => index === 0 ? pending.ageCategory : "بالغون");
+      try {
+        const parsed = JSON.parse(pending.participantCategories);
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed.every((item) => typeof item === "string")) participants = parsed;
+      } catch {
+        // Keep the legacy age-category fallback.
+      }
+      await ensureAppointmentAvailability(tx, pending.date, pending.time, participants, pending.service);
+      const [approved] = await tx.update(salonAppointments).set({
+        status: "confirmed",
+        updatedAt: new Date(),
+      }).where(and(eq(salonAppointments.id, appointmentId), eq(salonAppointments.status, "pending_approval"))).returning();
+      return { kind: "approved" as const, appointment: approved };
+    });
+    if (result.kind === "missing") return res.status(404).json({ message: "appointment not found" });
+    if (result.kind === "closed") return res.status(409).json({ code: "APPOINTMENT_ALREADY_REVIEWED", message: "تمت مراجعة هذا الطلب مسبقاً", appointment: mapAppointment(result.appointment) });
+    if (result.kind === "unavailable") return res.status(409).json({ code: "APPOINTMENT_TIME_UNAVAILABLE", message: "لم يعد الوقت متاحاً؛ لم تتم الموافقة على الطلب", appointment: mapAppointment(result.appointment) });
+    if (!result.appointment) return res.status(409).json({ message: "تعذر تحديث طلب الموعد" });
+    if (result.kind === "approved") {
+      let sent = false;
+      try {
+        const template = await getMessageTemplate("booking_confirmation");
+        sent = await sendWhatsAppMessage(result.appointment.phone, renderMessage(template, {
+          name: result.appointment.name,
+          date: result.appointment.date,
+          time: result.appointment.time,
+          service: result.appointment.service,
+          barber: result.appointment.barber,
+        }));
+        if (sent) await db.update(salonAppointments).set({ confirmationSent: true, updatedAt: new Date() }).where(eq(salonAppointments.id, result.appointment.id));
+      } catch (error) {
+        logger.warn({ err: error, appointmentId }, "Approved appointment confirmation deferred");
+      }
+      const [saved] = await db.select().from(salonAppointments).where(eq(salonAppointments.id, result.appointment.id)).limit(1);
+      return res.json({ appointment: mapAppointment(saved ?? result.appointment), decision, sent });
+    }
+    return res.json({ appointment: mapAppointment(result.appointment), decision, reason });
+  } catch (error) {
+    if (error instanceof AppointmentTimeUnavailableError) {
+      return res.status(error.statusCode).json({ code: error.code, message: error.message });
+    }
+    return next(error);
+  }
+});
+
+router.patch("/admin/appointments/:id/status", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const appointmentId = text(req.params.id);
+    const status = text(req.body?.status);
+    if (status !== "completed" && status !== "no_show") {
+      return res.status(400).json({ message: "الحالة يجب أن تكون مكتمل أو غياب" });
+    }
+    const result = await db.transaction(async (tx) => {
+      const [appointment] = await tx.select().from(salonAppointments)
+        .where(eq(salonAppointments.id, appointmentId))
+        .for("update")
+        .limit(1);
+      if (!appointment) return null;
+      if (!["confirmed", "completed", "no_show"].includes(appointment.status)) return appointment;
+      const [updated] = await tx.update(salonAppointments).set({ status, updatedAt: new Date() })
+        .where(eq(salonAppointments.id, appointmentId)).returning();
+      if (status === "no_show" && appointment.status !== "no_show" && updated.userId) {
+        await recordAbuseEvent(tx, {
+          userId: updated.userId,
+          phone: updated.phone,
+          eventType: "no_show",
+          metadata: { appointmentId },
+        });
+        await restrictAfterRepeatedIncidents(tx, updated.userId);
+      }
+      return updated;
+    });
+    if (!result) return res.status(404).json({ message: "appointment not found" });
+    return res.json(mapAppointment(result));
+  } catch (error) {
     return next(error);
   }
 });
@@ -1454,18 +1940,62 @@ router.patch("/admin/reviews/:id/status", requireAuth, requireAdmin, async (req,
   }
 });
 
-router.post("/appointments/:id/cancel", requireAuth, requireAdmin, async (req, res, next) => {
+router.post("/appointments/:id/cancel", requireAuth, async (req, res, next) => {
   try {
     const appointmentId = text(req.params.id);
     const reason = text(req.body?.reason);
     const [existing] = await db.select().from(salonAppointments).where(eq(salonAppointments.id, appointmentId)).limit(1);
     if (!existing) return res.status(404).json({ message: "appointment not found" });
     if (existing.status === "cancelled") return res.status(400).json({ message: "appointment is already cancelled" });
-
-    const [appointment] = await db.update(salonAppointments)
-      .set({ status: "cancelled", updatedAt: new Date() })
-      .where(eq(salonAppointments.id, appointmentId))
-      .returning();
+    const isAdmin = req.salonUser!.role === "admin";
+    if (!isAdmin && existing.userId !== req.salonUser!.id && existing.phone !== req.salonUser!.phone) {
+      return res.status(403).json({ message: "appointment access denied" });
+    }
+    const [appointment] = await db.transaction(async (tx) => {
+      if (!isAdmin) {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userBookingLockKey(req.salonUser!.id)}))`);
+        const cancellationRate = await cancellationRateStatus(tx, req.salonUser!.id);
+        const deviceHash = deviceHashFromRequest(req);
+        const [updated] = await tx.update(salonAppointments)
+          .set({ status: "cancelled", updatedAt: new Date() })
+          .where(and(eq(salonAppointments.id, appointmentId), inArray(salonAppointments.status, ["confirmed", "pending_approval"])))
+          .returning();
+        if (!updated) return [undefined];
+        await recordAbuseEvent(tx, {
+          userId: req.salonUser!.id,
+          phone: req.salonUser!.phone,
+          eventType: RATE_LIMIT_CANCELLATION_EVENT,
+          dateKey: cancellationRate.dateKey,
+          deviceHash,
+          metadata: { appointmentId, reason: reason.slice(0, 500) },
+        });
+        if (cancellationRate.alert) {
+          await recordCancellationRateAlert(tx, {
+            userId: req.salonUser!.id,
+            phone: req.salonUser!.phone,
+            dateKey: cancellationRate.dateKey,
+            deviceHash,
+            appointmentId,
+          });
+        }
+        if (updated.status === "cancelled" && existing.status === "confirmed" && appointmentIsWithinCancellationWindow(existing.date, existing.time)) {
+          await recordAbuseEvent(tx, {
+            userId: req.salonUser!.id,
+            phone: req.salonUser!.phone,
+            eventType: "late_cancel",
+            deviceHash: deviceHashFromRequest(req),
+            metadata: { appointmentId, reason: reason.slice(0, 500) },
+          });
+          await restrictAfterRepeatedIncidents(tx, req.salonUser!.id);
+        }
+        return [updated];
+      }
+      return tx.update(salonAppointments)
+        .set({ status: "cancelled", updatedAt: new Date() })
+        .where(and(eq(salonAppointments.id, appointmentId), inArray(salonAppointments.status, ["confirmed", "pending_approval"])))
+        .returning();
+    });
+    if (!appointment) return res.status(404).json({ message: "appointment not found or already closed" });
     const normalizedPhone = normalizePhone(appointment.phone);
     const cancellationReason = reason || "ظرف طارئ في جدول الصالون";
     const message = `أهلاً ${appointment.name}، نعتذر منك، تم إلغاء موعدك المحدد بتاريخ ${appointment.date} الساعة ${appointment.time} في صالون البارون. السبب: ${cancellationReason}.`;
@@ -1480,6 +2010,9 @@ router.post("/appointments/:id/cancel", requireAuth, requireAdmin, async (req, r
       : "";
     return res.json({ appointment: mapAppointment(appointment), whatsappUrl, sent });
   } catch (error) {
+    if (error instanceof AntiAbuseRateLimitError) {
+      return res.status(error.statusCode).json({ code: error.code, message: error.message });
+    }
     return next(error);
   }
 });
