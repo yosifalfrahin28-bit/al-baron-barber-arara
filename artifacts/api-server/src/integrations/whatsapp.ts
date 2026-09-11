@@ -16,11 +16,16 @@ const authDir = path.resolve(
   process.env.WHATSAPP_AUTH_DIR ?? path.join(process.cwd(), ".data", "whatsapp-auth"),
 );
 const whatsappEnabled = process.env.WHATSAPP_ENABLED !== "false";
+const PAIRING_CODE_TTL_MS = 5 * 60 * 1000;
 
 let socket: WASocket | null = null;
 let state: WhatsAppConnectionState = "disconnected";
 let latestQr: string | null = null;
 let qrUpdatedAt: Date | null = null;
+let pairingPhone: string | null = null;
+let latestPairingCode: string | null = null;
+let pairingCodeExpiresAt: Date | null = null;
+let pairingRequestPromise: Promise<{ code: string; expiresAt: Date }> | null = null;
 let startPromise: Promise<void> | null = null;
 let reconnectTimer: NodeJS.Timeout | null = null;
 let authSyncTimer: NodeJS.Timeout | null = null;
@@ -29,6 +34,58 @@ let authSyncPromise: Promise<void> | null = null;
 function toWhatsAppJid(phone: string) {
   const digits = phone.replace(/\D/g, "").replace(/^0+/, "972");
   return `${digits}@s.whatsapp.net`;
+}
+
+const arabicIndicDigits = "٠١٢٣٤٥٦٧٨٩";
+const easternArabicDigits = "۰۱۲۳۴۵۶۷۸۹";
+
+/**
+ * Baileys expects a digits-only international number without a leading +.
+ * The UI accepts local Israeli notation as well as E.164/00-prefixed numbers.
+ * Other E.164 countries are also accepted so a shop can use a non-Israeli
+ * WhatsApp number without changing the pairing flow.
+ */
+export function normalizeWhatsAppPhone(value: string) {
+  if (typeof value !== "string") return "";
+
+  const translated = Array.from(value, (character) => {
+    const arabicIndex = arabicIndicDigits.indexOf(character);
+    if (arabicIndex >= 0) return String(arabicIndex);
+    const easternIndex = easternArabicDigits.indexOf(character);
+    return easternIndex >= 0 ? String(easternIndex) : character;
+  }).join("");
+  let digits = translated.replace(/\D/g, "");
+  if (digits.startsWith("00")) digits = digits.slice(2);
+
+  if (digits.startsWith("0")) {
+    // Israeli local mobile and landline formats. A local number is never
+    // passed to Baileys directly because it must include its country code.
+    if (!/^0(?:5\d{8}|[2-9]\d{7,8})$/.test(digits)) return "";
+    digits = `972${digits.slice(1)}`;
+  }
+
+  return /^[1-9]\d{7,14}$/.test(digits) ? digits : "";
+}
+
+export function isValidWhatsAppPhone(value: string) {
+  return normalizeWhatsAppPhone(value).length > 0;
+}
+
+export class WhatsAppPairingError extends Error {
+  constructor(
+    readonly code: "INVALID_PHONE" | "WHATSAPP_DISABLED" | "PAIRING_CODE_ACTIVE" | "WHATSAPP_ALREADY_CONNECTED" | "PAIRING_UNAVAILABLE",
+    message: string,
+    readonly statusCode: number,
+  ) {
+    super(message);
+    this.name = "WhatsAppPairingError";
+  }
+}
+
+function clearPairingCode() {
+  pairingPhone = null;
+  latestPairingCode = null;
+  pairingCodeExpiresAt = null;
 }
 
 function scheduleReconnect() {
@@ -152,12 +209,14 @@ export async function startWhatsApp() {
         state = "connected";
         latestQr = null;
         qrUpdatedAt = null;
+        clearPairingCode();
         logger.info({ authDir }, "WhatsApp connected");
       } else if (connection === "close") {
         socket = null;
         state = "disconnected";
         latestQr = null;
         qrUpdatedAt = null;
+        clearPairingCode();
         const statusCode = (lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)?.output?.statusCode;
         if (statusCode !== DisconnectReason.loggedOut) {
           logger.warn({ statusCode }, "WhatsApp disconnected; reconnecting");
@@ -174,12 +233,107 @@ export async function startWhatsApp() {
 }
 
 export function getWhatsAppStatus() {
+  const pairingActive = Boolean(pairingCodeExpiresAt && pairingCodeExpiresAt.getTime() > Date.now());
   return {
     state,
-    authDir,
     qr: latestQr,
     qrUpdatedAt: qrUpdatedAt?.toISOString() ?? null,
+    pairingActive,
+    pairingExpiresAt: pairingActive ? pairingCodeExpiresAt!.toISOString() : null,
   };
+}
+
+/**
+ * Ask the current unauthenticated socket for a phone-number pairing code.
+ *
+ * This intentionally refuses to run against an existing/connected session.
+ * Calling requestPairingCode on a live session changes Baileys' companion
+ * identity, so it could disconnect the shop's active WhatsApp account.
+ */
+export async function requestWhatsAppPairingCode(phone: string) {
+  const normalizedPhone = normalizeWhatsAppPhone(phone);
+  if (!normalizedPhone) {
+    throw new WhatsAppPairingError(
+      "INVALID_PHONE",
+      "أدخل رقم WhatsApp صالحاً بصيغة محلية أو دولية",
+      400,
+    );
+  }
+  if (!whatsappEnabled) {
+    throw new WhatsAppPairingError(
+      "WHATSAPP_DISABLED",
+      "ربط WhatsApp غير متاح حالياً",
+      503,
+    );
+  }
+
+  if (pairingRequestPromise) {
+    if (pairingPhone !== normalizedPhone) {
+      throw new WhatsAppPairingError(
+        "PAIRING_UNAVAILABLE",
+        "يوجد طلب ربط آخر قيد التنفيذ، انتظر ثم حاول مرة أخرى",
+        409,
+      );
+    }
+    return pairingRequestPromise;
+  }
+
+  if (latestPairingCode && pairingCodeExpiresAt && pairingCodeExpiresAt.getTime() > Date.now()) {
+    throw new WhatsAppPairingError(
+      "PAIRING_CODE_ACTIVE",
+      "يوجد رمز ربط فعال حالياً. أدخل الرمز الظاهر قبل طلب رمز جديد",
+      409,
+    );
+  }
+  clearPairingCode();
+
+  if (state === "connected" || socket?.authState.creds.registered) {
+    throw new WhatsAppPairingError(
+      "WHATSAPP_ALREADY_CONNECTED",
+      "WhatsApp متصل حالياً. لن يتم تغيير الجلسة الحالية",
+      409,
+    );
+  }
+
+  pairingPhone = normalizedPhone;
+  pairingRequestPromise = (async () => {
+    try {
+      if (!socket || state === "disconnected") await startWhatsApp();
+      const pairingSocket = socket;
+      if (!pairingSocket) throw new Error("WhatsApp socket unavailable");
+
+      // requestPairingCode sends an IQ node and therefore must wait for the
+      // underlying WebSocket, not merely for the connection.update event.
+      await pairingSocket.waitForSocketOpen();
+      if (getWhatsAppStatus().state === "connected" || pairingSocket.authState.creds.registered) {
+        throw new WhatsAppPairingError(
+          "WHATSAPP_ALREADY_CONNECTED",
+          "WhatsApp متصل حالياً. لن يتم تغيير الجلسة الحالية",
+          409,
+        );
+      }
+
+      const code = await pairingSocket.requestPairingCode(normalizedPhone);
+      const expiresAt = new Date(Date.now() + PAIRING_CODE_TTL_MS);
+      latestPairingCode = code;
+      pairingCodeExpiresAt = expiresAt;
+      return { code, expiresAt };
+    } catch (error) {
+      if (error instanceof WhatsAppPairingError) throw error;
+      // Deliberately do not log this error: Baileys errors can contain
+      // protocol details and this endpoint must never log pairing material.
+      throw new WhatsAppPairingError(
+        "PAIRING_UNAVAILABLE",
+        "تعذر تجهيز رمز الربط حالياً. حاول مرة أخرى بعد قليل",
+        503,
+      );
+    } finally {
+      pairingRequestPromise = null;
+      if (!latestPairingCode) pairingPhone = null;
+    }
+  })();
+
+  return pairingRequestPromise;
 }
 
 export async function sendWhatsAppMessage(phone: string, message: string) {
