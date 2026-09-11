@@ -16,10 +16,15 @@ const configuredFrontendOrigins = (process.env.FRONTEND_ORIGIN ?? "")
 function isAlBaronVercelPreview(origin: string) {
   try {
     const url = new URL(origin);
+    const isProductionAlias =
+      url.hostname === "al-baron-barber-arara-al-baron-mobi-blue.vercel.app";
+    const isProjectDeployment =
+      url.hostname.startsWith("al-baron-barber-arara-al-baron-mobile-5zq2-") &&
+      url.hostname.endsWith(".vercel.app");
+
     return (
       url.protocol === "https:" &&
-      url.hostname.startsWith("al-baron-barber-arara-al-baron-mobile-5zq2-") &&
-      url.hostname.endsWith(".vercel.app")
+      (isProductionAlias || isProjectDeployment)
     );
   } catch {
     return false;
