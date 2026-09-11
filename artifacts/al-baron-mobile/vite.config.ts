@@ -11,7 +11,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon.svg', 'icon-180.png', 'icon-512.png'],
+      includeAssets: ['icon-180.png', 'icon-512.png'],
       manifest: {
         name: 'Al-Baron Barber Shop',
         short_name: 'Al-Baron',
