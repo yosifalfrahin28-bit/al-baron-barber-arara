@@ -12,6 +12,7 @@ import {
   salonAgeCategories,
   salonProducts,
   salonShopInfo,
+  salonBarbers,
   salonServices,
   salonScheduleSlots,
   salonSettings,
@@ -70,6 +71,11 @@ const defaultCustomerServices = [
   { id: "customer-hair-beard", name: "شعر ولحية", description: "قص شعر مع تهذيب اللحية", price: 95, duration: 50, visible: true },
 ];
 
+const defaultBarbers = [
+  { id: "barber-samer", name: "سامر", photoPath: null, active: true },
+  { id: "barber-fadi", name: "فادي", photoPath: null, active: true },
+];
+
 const defaultAgeCategories = [
   { id: "child", name: "أطفال", minAge: 0, maxAge: 12, additionalMinutes: 10, active: true, sortOrder: 0 },
   { id: "teen", name: "شباب", minAge: 13, maxAge: 17, additionalMinutes: 20, active: true, sortOrder: 1 },
@@ -105,6 +111,8 @@ async function ensureSeeded() {
   }
   const shopInfoRows = await db.select({ id: salonShopInfo.id }).from(salonShopInfo).where(eq(salonShopInfo.id, 1)).limit(1);
   if (shopInfoRows.length === 0) await db.insert(salonShopInfo).values({ id: 1 });
+  const barberRows = await db.select({ id: salonBarbers.id }).from(salonBarbers);
+  if (barberRows.length === 0) await db.insert(salonBarbers).values(defaultBarbers).onConflictDoNothing();
   const ticketRows = await db.select({ id: salonTickets.id }).from(salonTickets).limit(1);
   const scheduleRows = await db.select().from(salonScheduleSlots);
   if (scheduleRows.length === 0) {
@@ -146,6 +154,60 @@ async function ensureSeeded() {
 
 function mapService(service: typeof salonServices.$inferSelect) {
   return { id: service.id, name: service.name, description: service.description, price: service.price, duration: service.duration, visible: service.visible };
+}
+
+function mapBarber(barber: typeof salonBarbers.$inferSelect) {
+  return {
+    id: barber.id,
+    name: barber.name,
+    photoPath: barber.photoPath,
+    active: barber.active,
+  };
+}
+
+/**
+ * Photo uploads use Replit object paths in development, while external
+ * deployments can point at an image hosted by a durable provider. Keep the
+ * accepted values narrow so a barber record cannot be used to inject a
+ * javascript/data URL into the customer UI.
+ */
+function parseBarberPhotoPath(value: unknown, fallback: string | null = null): string | null | undefined {
+  if (value === undefined) return fallback;
+  if (value === null) return null;
+  const photoPath = text(value);
+  if (!photoPath || photoPath.length > 2048) return undefined;
+
+  if (photoPath.startsWith("/objects/")) {
+    const objectName = photoPath.slice("/objects/".length);
+    if (
+      !objectName
+      || objectName.split("/").some((part) => !part || part === "." || part === "..")
+      || /[\u0000-\u001f?#]/.test(objectName)
+    ) {
+      return undefined;
+    }
+    return photoPath;
+  }
+
+  try {
+    const parsed = new URL(photoPath);
+    if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password) {
+      return undefined;
+    }
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+async function isSelectableBarber(name: string) {
+  if (name === "أول حلاق متاح") return true;
+  await ensureSeeded();
+  const [barber] = await db.select({ active: salonBarbers.active })
+    .from(salonBarbers)
+    .where(and(eq(salonBarbers.name, name), eq(salonBarbers.active, true)))
+    .limit(1);
+  return barber?.active === true;
 }
 
 function mapAgeCategory(category: typeof salonAgeCategories.$inferSelect) {
@@ -296,7 +358,7 @@ function appointmentDurationMinutes(
   serviceDurations: Map<string, number>,
   categoryDurations: Map<string, number>,
 ) {
-  const baseDuration = serviceDurations.get(serviceName) ?? 30;
+  const baseDuration = Math.max(1, serviceDurations.get(serviceName) ?? 30);
   const extraDuration = participantCategories
     .slice(1)
     .reduce((total, category) => total + (categoryDurations.get(category) ?? defaultAdditionalMinutesForCategory(category)), 0);
@@ -343,26 +405,39 @@ const defaultScheduleTimes = Array.from({ length: 31 }, (_, index) => {
   return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 });
 
-router.get("/salon/state", async (_req, res, next) => {
+router.get("/salon/state", async (req, res, next) => {
   try {
     await ensureSeeded();
+    const sessionUser = await getSessionUser(getSessionToken(req));
     const [settings] = await db.select().from(salonSettings).where(eq(salonSettings.id, 1));
     const services = await db.select().from(salonServices).orderBy(asc(salonServices.createdAt));
     const tickets = await db.select().from(salonTickets).where(and(eq(salonTickets.status, "waiting"))).orderBy(asc(salonTickets.number));
     const [current] = await db.select().from(salonTickets).where(eq(salonTickets.status, "serving")).limit(1);
     const appointments = await db.select().from(salonAppointments).orderBy(desc(salonAppointments.createdAt)).limit(100);
+    const visibleAppointments = sessionUser?.role === "admin"
+      ? appointments
+      : appointments.map((appointment) => appointment.phone === sessionUser?.phone
+        ? appointment
+        : { ...appointment, name: "", phone: "" });
     const ageCategories = await db.select().from(salonAgeCategories).orderBy(asc(salonAgeCategories.sortOrder));
     const products = await db.select().from(salonProducts).orderBy(asc(salonProducts.createdAt));
     const [shopInfo] = await db.select().from(salonShopInfo).where(eq(salonShopInfo.id, 1)).limit(1);
     res.json({
-      settings: { shopOpen: settings?.shopOpen ?? true },
+      settings: {
+        shopOpen: settings?.shopOpen ?? true,
+        showDurationToCustomers: settings?.showDurationToCustomers ?? true,
+      },
       services: services.map(mapService),
+      barbers: (await db.select().from(salonBarbers).where(eq(salonBarbers.active, true)).orderBy(asc(salonBarbers.createdAt))).map(mapBarber),
       ageCategories: ageCategories.map(mapAgeCategory),
       products: products.map(mapProduct),
       shopInfo: shopInfo ? mapShopInfo(shopInfo) : mapShopInfo({ id: 1, shopName: "صالون البارون", phone: "", whatsapp: "", address: "", mapsUrl: "", instagramUrl: "", bitLink: "", openingHours: "", updatedAt: new Date() }),
       currentTicket: current ? mapTicket(current, 0, 0) : null,
       waitingTickets: tickets.map((ticket, index) => mapTicket(ticket, index + 1, index)),
-      appointments: appointments.map(mapAppointment),
+      // The public state still includes occupied slots so booking availability
+      // can be rendered, but customer PII is only returned for that customer's
+      // own historical bookings.
+      appointments: visibleAppointments.map(mapAppointment),
       schedule: (await db.select().from(salonScheduleSlots).orderBy(asc(salonScheduleSlots.dayOfWeek), asc(salonScheduleSlots.time))).map(mapScheduleSlot),
     });
   } catch (error) {
@@ -940,6 +1015,9 @@ router.post("/tickets", requireAuth, requireBookingAccess, async (req, res, next
     const barber = text(req.body?.barber, "أول حلاق متاح");
     const service = text(req.body?.service, "قص شعر مودرن");
     const ageCategory = text(req.body?.ageCategory, "بالغون");
+    if (!(await isSelectableBarber(barber))) {
+      return res.status(400).json({ message: "الحلاق المحدد غير متاح حالياً" });
+    }
     const rawParticipantCategories = req.body?.participantCategories;
     if (rawParticipantCategories !== undefined && (
       !Array.isArray(rawParticipantCategories)
@@ -1013,6 +1091,9 @@ router.post("/walk-ins", requireAuth, requireAdmin, async (req, res, next) => {
     const barber = text(req.body?.barber, "أول حلاق متاح");
     const service = text(req.body?.service, "قص شعر مودرن");
     const ageCategory = text(req.body?.ageCategory, "بالغون");
+    if (!(await isSelectableBarber(barber))) {
+      return res.status(400).json({ message: "الحلاق المحدد غير متاح حالياً" });
+    }
     const [highest] = await db.select({ value: max(salonTickets.number) }).from(salonTickets);
     const [ticket] = await db.insert(salonTickets).values({ id: id("ticket"), number: (highest?.value ?? 0) + 1, name, phone, barber, service, ageCategory, status: "waiting" }).returning();
     res.status(201).json(mapTicket(ticket));
@@ -1064,6 +1145,9 @@ router.post("/appointments", requireAuth, requireBookingAccess, async (req, res,
     const barber = text(req.body?.barber, "أول حلاق متاح");
     const service = text(req.body?.service, "قص شعر مودرن");
     const ageCategory = text(req.body?.ageCategory, "بالغون");
+    if (!(await isSelectableBarber(barber))) {
+      return res.status(400).json({ message: "الحلاق المحدد غير متاح حالياً" });
+    }
     const rawParticipantCategories = req.body?.participantCategories;
     if (rawParticipantCategories !== undefined && (
       !Array.isArray(rawParticipantCategories)
@@ -1315,9 +1399,100 @@ router.get("/services", async (_req, res, next) => {
   }
 });
 
+router.get("/barbers", async (_req, res, next) => {
+  try {
+    await ensureSeeded();
+    const barbers = await db.select().from(salonBarbers)
+      .where(eq(salonBarbers.active, true))
+      .orderBy(asc(salonBarbers.createdAt));
+    return res.json(barbers.map(mapBarber));
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.get("/admin/barbers", requireAuth, requireAdmin, async (_req, res, next) => {
+  try {
+    await ensureSeeded();
+    const barbers = await db.select().from(salonBarbers).orderBy(asc(salonBarbers.createdAt));
+    return res.json(barbers.map(mapBarber));
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post("/barbers", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const name = text(req.body?.name);
+    if (!name) return res.status(400).json({ message: "barber name is required" });
+    if (name.length > 80) return res.status(400).json({ message: "barber name is too long" });
+    const photoPath = parseBarberPhotoPath(req.body?.photoPath);
+    if (photoPath === undefined) return res.status(400).json({ message: "barber photo URL is invalid" });
+    const [barber] = await db.insert(salonBarbers).values({
+      id: text(req.body?.id, id("barber")),
+      name,
+      photoPath,
+      active: req.body?.active === undefined ? true : bool(req.body.active),
+    }).returning();
+    return res.status(201).json(mapBarber(barber));
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.patch("/barbers/:id", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const barberId = text(req.params.id);
+    const [existing] = await db.select().from(salonBarbers).where(eq(salonBarbers.id, barberId)).limit(1);
+    if (!existing) return res.status(404).json({ message: "barber not found" });
+    const name = req.body?.name === undefined ? existing.name : text(req.body.name);
+    if (!name) return res.status(400).json({ message: "barber name is required" });
+    if (name.length > 80) return res.status(400).json({ message: "barber name is too long" });
+    const photoPath = parseBarberPhotoPath(req.body?.photoPath, existing.photoPath);
+    if (photoPath === undefined) return res.status(400).json({ message: "barber photo URL is invalid" });
+    const [barber] = await db.update(salonBarbers).set({
+      name,
+      photoPath,
+      active: req.body?.active === undefined ? existing.active : bool(req.body.active),
+      updatedAt: new Date(),
+    }).where(eq(salonBarbers.id, barberId)).returning();
+    return res.json(mapBarber(barber));
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.delete("/barbers/:id", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const barberId = text(req.params.id);
+    const [barber] = await db.update(salonBarbers)
+      .set({ active: false, updatedAt: new Date() })
+      .where(eq(salonBarbers.id, barberId))
+      .returning();
+    if (!barber) return res.status(404).json({ message: "barber not found" });
+    // Keep the row (and its name) so historical appointments remain readable.
+    return res.status(204).send();
+  } catch (error) {
+    return next(error);
+  }
+});
+
 router.post("/services", requireAuth, requireAdmin, async (req, res, next) => {
   try {
-    const [service] = await db.insert(salonServices).values({ id: text(req.body?.id, id("service")), name: text(req.body?.name), description: text(req.body?.description), price: number(req.body?.price), duration: number(req.body?.duration, 30), visible: bool(req.body?.visible) }).returning();
+    const name = text(req.body?.name);
+    const price = number(req.body?.price);
+    const duration = number(req.body?.duration, 30);
+    if (!name) return res.status(400).json({ message: "service name is required" });
+    if (price < 0) return res.status(400).json({ message: "service price cannot be negative" });
+    if (duration < 1 || duration > 1440) return res.status(400).json({ message: "service duration must be between 1 and 1440 minutes" });
+    const [service] = await db.insert(salonServices).values({
+      id: text(req.body?.id, id("service")),
+      name,
+      description: text(req.body?.description),
+      price,
+      duration,
+      visible: bool(req.body?.visible),
+    }).returning();
     res.status(201).json(mapService(service));
   } catch (error) {
     return next(error);
@@ -1326,8 +1501,23 @@ router.post("/services", requireAuth, requireAdmin, async (req, res, next) => {
 
 router.patch("/services/:id", requireAuth, requireAdmin, async (req, res, next) => {
   try {
-    const [service] = await db.update(salonServices).set({ name: text(req.body?.name), description: text(req.body?.description), price: number(req.body?.price), duration: number(req.body?.duration, 30), visible: bool(req.body?.visible), updatedAt: new Date() }).where(eq(salonServices.id, text(req.params.id))).returning();
-    if (!service) return res.status(404).json({ message: "service not found" });
+    const serviceId = text(req.params.id);
+    const [existing] = await db.select().from(salonServices).where(eq(salonServices.id, serviceId)).limit(1);
+    if (!existing) return res.status(404).json({ message: "service not found" });
+    const name = req.body?.name === undefined ? existing.name : text(req.body.name);
+    const price = req.body?.price === undefined ? existing.price : number(req.body.price);
+    const duration = req.body?.duration === undefined ? existing.duration : number(req.body.duration);
+    if (!name) return res.status(400).json({ message: "service name is required" });
+    if (price < 0) return res.status(400).json({ message: "service price cannot be negative" });
+    if (duration < 1 || duration > 1440) return res.status(400).json({ message: "service duration must be between 1 and 1440 minutes" });
+    const [service] = await db.update(salonServices).set({
+      name,
+      description: req.body?.description === undefined ? existing.description : text(req.body.description),
+      price,
+      duration,
+      visible: req.body?.visible === undefined ? existing.visible : bool(req.body.visible),
+      updatedAt: new Date(),
+    }).where(eq(salonServices.id, serviceId)).returning();
     res.json(mapService(service));
   } catch (error) {
     return next(error);
@@ -1551,8 +1741,18 @@ router.patch("/schedule-slots/:id", requireAuth, requireAdmin, async (req, res, 
 router.patch("/settings", requireAuth, requireAdmin, async (req, res, next) => {
   try {
     await ensureSeeded();
-    const [settings] = await db.update(salonSettings).set({ shopOpen: bool(req.body?.shopOpen), updatedAt: new Date() }).where(eq(salonSettings.id, 1)).returning();
-    res.json({ shopOpen: settings?.shopOpen ?? true });
+    const [existing] = await db.select().from(salonSettings).where(eq(salonSettings.id, 1)).limit(1);
+    const [settings] = await db.update(salonSettings).set({
+      shopOpen: req.body?.shopOpen === undefined ? existing?.shopOpen ?? true : bool(req.body.shopOpen),
+      showDurationToCustomers: req.body?.showDurationToCustomers === undefined
+        ? existing?.showDurationToCustomers ?? true
+        : bool(req.body.showDurationToCustomers),
+      updatedAt: new Date(),
+    }).where(eq(salonSettings.id, 1)).returning();
+    res.json({
+      shopOpen: settings?.shopOpen ?? true,
+      showDurationToCustomers: settings?.showDurationToCustomers ?? true,
+    });
   } catch (error) {
     next(error);
   }
@@ -1561,7 +1761,10 @@ router.patch("/settings", requireAuth, requireAdmin, async (req, res, next) => {
 router.get("/settings", async (_req, res, next) => {
   try {
     const [settings] = await db.select().from(salonSettings).where(eq(salonSettings.id, 1)).limit(1);
-    return res.json({ shopOpen: settings?.shopOpen ?? true });
+    return res.json({
+      shopOpen: settings?.shopOpen ?? true,
+      showDurationToCustomers: settings?.showDurationToCustomers ?? true,
+    });
   } catch (error) {
     return next(error);
   }

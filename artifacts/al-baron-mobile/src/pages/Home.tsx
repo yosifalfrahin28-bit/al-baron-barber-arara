@@ -12,7 +12,7 @@ const gallery = [
 
 export default function Home() {
   const [, setLocation] = useLocation();
-  const { profile, activeTicket, waitingTickets, services, products, shopInfo, shopOpen, lastReminderAt, setSelectedStyle } = useSalon();
+  const { profile, activeTicket, waitingTickets, services, products, shopInfo, shopOpen, showDurationToCustomers, lastReminderAt, setSelectedStyle } = useSalon();
   
   const peopleAhead = activeTicket?.peopleAhead ?? (activeTicket ? waitingTickets.filter((ticket) => ticket.number < activeTicket.number).length : 0);
   const wait = Math.max(10, peopleAhead * 10);
@@ -153,7 +153,7 @@ export default function Home() {
                  <Wind size={24} className="text-primary" />}
               </div>
               <div className="text-sm font-bold text-right leading-tight text-foreground">{service.name}</div>
-              <div className="text-[11px] text-right mt-2 text-muted-foreground">{service.duration} دقيقة</div>
+              {showDurationToCustomers && <div className="text-[11px] text-right mt-2 text-muted-foreground">{service.duration} دقيقة</div>}
               <div className="text-base font-bold text-right mt-4 text-primary">{service.price} ₪</div>
             </Card>
           ))}

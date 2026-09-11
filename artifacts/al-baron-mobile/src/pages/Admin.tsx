@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'wouter';
-import { ShieldAlert, ShieldX, ShieldCheck, ChevronLeft, Tv, QrCode, MapPin, Clock, CheckCircle, FileEdit, X, PlusCircle, ArrowRight, ScanLine, CalendarIcon, MessageCircle, Send, ExternalLink, Power, Pencil, Ban, Trash2, Search, KeyRound, Package, Store, UsersRound, MessageSquareHeart, Star } from 'lucide-react';
+import { ShieldAlert, ShieldX, ShieldCheck, ChevronLeft, Tv, QrCode, MapPin, Clock, CheckCircle, FileEdit, X, PlusCircle, ArrowRight, ScanLine, CalendarIcon, MessageCircle, Send, ExternalLink, Power, Pencil, Ban, Trash2, Search, KeyRound, Package, Store, UsersRound, MessageSquareHeart, Star, UserRound, ImagePlus } from 'lucide-react';
 import { useSalon, type AgeCategory, type Product, type ShopInfo } from '@/context/SalonContext';
 import { usePhoneAuth } from '@/context/AuthContext';
-import { getListAdminCustomersQueryKey, type Appointment, type Customer, type Service, type ScheduleSlot, useListAdminCustomers } from '@workspace/api-client-react';
+import { getListAdminCustomersQueryKey, type Appointment, type Barber, type Customer, type Service, type ScheduleSlot, useListAdminCustomers } from '@workspace/api-client-react';
 import { BottomNavigation, Card, GoldButton, IconButton, IconButtonLink, Screen, SectionTitle, StatusPill, cn } from '@/components/SalonUI';
 import { sessionJson, sessionRequest } from '@/lib/session-api';
+import { barberPhotoUrl } from '@/lib/api';
 
 type MessageTemplate = { key: string; label: string; body: string };
 type AdminReview = {
@@ -29,6 +30,7 @@ export default function Admin() {
     toggleShop,
     tickets,
     services,
+    barbers,
     ageCategories,
     products,
     shopInfo,
@@ -39,6 +41,7 @@ export default function Admin() {
     addWalkIn,
     saveService,
     deleteService,
+    deleteBarber,
     summon,
     addScheduleSlot,
     updateScheduleSlot,
@@ -49,14 +52,21 @@ export default function Admin() {
     saveProduct,
     deleteProduct,
     saveShopInfo,
+    showDurationToCustomers,
+    toggleDurationToCustomers,
   } = useSalon();
   
-  const [tab, setTab] = useState<'queue' | 'services' | 'clients' | 'broadcast' | 'schedule' | 'appointments' | 'ages' | 'products' | 'shop' | 'templates' | 'reviews'>('queue');
+  const [tab, setTab] = useState<'queue' | 'services' | 'barbers' | 'clients' | 'broadcast' | 'schedule' | 'appointments' | 'ages' | 'products' | 'shop' | 'templates' | 'reviews'>('queue');
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<Service | null>(null);
   const [walkInModal, setWalkInModal] = useState(false);
   const [walkInName, setWalkInName] = useState('');
   const [draft, setDraft] = useState<Service>({ id: '', name: '', description: '', price: 0, duration: 30, visible: true });
+  const [barberModal, setBarberModal] = useState(false);
+  const [editingBarber, setEditingBarber] = useState<Barber | null>(null);
+  const [barberDraft, setBarberDraft] = useState<Barber>({ id: '', name: '', photoPath: null, active: true });
+  const [adminBarbers, setAdminBarbers] = useState<Barber[]>(barbers);
+  const [barbersLoading, setBarbersLoading] = useState(false);
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [broadcastConfirm, setBroadcastConfirm] = useState(false);
   const [broadcastState, setBroadcastState] = useState<'idle' | 'counting' | 'sending' | 'success' | 'error'>('idle');
@@ -76,6 +86,7 @@ export default function Admin() {
   const [shopError, setShopError] = useState('');
   const [queuePending, setQueuePending] = useState(false);
   const [shopPending, setShopPending] = useState(false);
+  const [durationPending, setDurationPending] = useState(false);
   const [actionError, setActionError] = useState('');
   const [actionPending, setActionPending] = useState(false);
   const [customerActionPending, setCustomerActionPending] = useState(false);
@@ -148,10 +159,28 @@ export default function Admin() {
           if (!cancelled) setReviewsLoading(false);
         });
     }
+    if (tab === 'barbers') {
+      setBarbersLoading(true);
+      sessionRequest<Barber[]>('/api/admin/barbers')
+        .then((data) => {
+          if (!cancelled) setAdminBarbers(data);
+        })
+        .catch((error) => {
+          if (!cancelled) setActionError(getActionError(error));
+        })
+        .finally(() => {
+          if (!cancelled) setBarbersLoading(false);
+        });
+    }
     return () => {
       cancelled = true;
     };
   }, [role, tab]);
+
+  useEffect(() => {
+    if (tab !== 'barbers') return;
+    setAdminBarbers((current) => current.length > 0 ? current : barbers);
+  }, [barbers, tab]);
 
   useEffect(() => {
     if (role !== 'admin' || tab !== 'appointments') return;
@@ -188,6 +217,74 @@ export default function Admin() {
     try {
       await saveService(draft);
       setModal(false);
+    } catch (error) {
+      setActionError(getActionError(error));
+    } finally {
+      setActionPending(false);
+    }
+  };
+
+  const showBarber = (barber?: Barber) => {
+    setEditingBarber(barber ?? null);
+    setBarberDraft(barber ?? { id: `barber-${Date.now()}`, name: '', photoPath: null, active: true });
+    setBarberModal(true);
+  };
+
+  const uploadBarberPhoto = async (file: File) => {
+    if (!file.type.startsWith('image/')) throw new Error('اختر ملف صورة صالحاً.');
+    if (file.size > 5 * 1024 * 1024) throw new Error('حجم الصورة يجب ألا يتجاوز 5 ميغابايت.');
+    const upload = await sessionJson<{ uploadURL: string; objectPath: string }>('/api/storage/uploads/request-url', 'POST', {
+      name: file.name,
+      size: file.size,
+      contentType: file.type,
+    });
+    const response = await fetch(upload.uploadURL, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type },
+      body: file,
+    });
+    if (!response.ok) throw new Error('تعذر رفع الصورة. حاول مرة أخرى.');
+    return upload.objectPath;
+  };
+
+  const saveBarberDraft = async () => {
+    if (!barberDraft.name.trim()) {
+      setActionError('اسم الحلاق مطلوب.');
+      return;
+    }
+    setActionError('');
+    setActionPending(true);
+    try {
+      const isExisting = Boolean(editingBarber);
+      const saved = isExisting
+        ? await sessionJson<Barber>(`/api/barbers/${barberDraft.id}`, 'PATCH', {
+            name: barberDraft.name.trim(),
+            photoPath: barberDraft.photoPath,
+            active: barberDraft.active,
+          })
+        : await sessionJson<Barber>('/api/barbers', 'POST', {
+            name: barberDraft.name.trim(),
+            photoPath: barberDraft.photoPath,
+            active: barberDraft.active,
+          });
+      setAdminBarbers((current) => current.some((item) => item.id === saved.id)
+        ? current.map((item) => item.id === saved.id ? saved : item)
+        : [...current, saved]);
+      setBarberModal(false);
+    } catch (error) {
+      setActionError(getActionError(error));
+    } finally {
+      setActionPending(false);
+    }
+  };
+
+  const handleBarberPhoto = async (file: File | undefined) => {
+    if (!file) return;
+    setActionError('');
+    setActionPending(true);
+    try {
+      const photoPath = await uploadBarberPhoto(file);
+      setBarberDraft((current) => ({ ...current, photoPath }));
     } catch (error) {
       setActionError(getActionError(error));
     } finally {
@@ -357,6 +454,20 @@ export default function Admin() {
     setActionPending(true);
     try {
       await deleteService(serviceId);
+    } catch (error) {
+      setActionError(getActionError(error));
+    } finally {
+      setActionPending(false);
+    }
+  };
+
+  const handleDeleteBarber = async (barber: Barber) => {
+    if (!window.confirm(`إخفاء الحلاق ${barber.name}؟ ستبقى الحجوزات السابقة محفوظة.`)) return;
+    setActionError('');
+    setActionPending(true);
+    try {
+      await deleteBarber(barber.id);
+      setAdminBarbers((current) => current.map((item) => item.id === barber.id ? { ...item, active: false } : item));
     } catch (error) {
       setActionError(getActionError(error));
     } finally {
@@ -548,6 +659,18 @@ export default function Admin() {
     }
   };
 
+  const handleToggleDuration = async () => {
+    setActionError('');
+    setDurationPending(true);
+    try {
+      await toggleDurationToCustomers();
+    } catch (error) {
+      setActionError(getActionError(error));
+    } finally {
+      setDurationPending(false);
+    }
+  };
+
   const prepareBroadcast = async () => {
     if (!broadcastMessage.trim()) {
       setBroadcastError('اكتب الرسالة قبل الإرسال.');
@@ -644,6 +767,19 @@ export default function Admin() {
       </div>
       {shopError && <div className="mt-3 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-right text-xs text-destructive">{shopError}</div>}
       {actionError && <div role="alert" className="mt-3 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-right text-xs text-destructive">{actionError}</div>}
+      <div className="mt-3 flex flex-row-reverse items-center justify-between gap-4 rounded-[20px] border border-border bg-card p-4">
+        <div className="text-right">
+          <div className="text-sm font-bold text-foreground">إظهار مدة الخدمة للزبائن</div>
+          <div className="mt-1 text-[11px] leading-5 text-muted-foreground">تغيير العرض فقط؛ لا يغيّر حسابات الحجز أو أوقات الجدول.</div>
+        </div>
+        <label className="relative inline-flex shrink-0 cursor-pointer items-center">
+          <input type="checkbox" className="sr-only peer" checked={showDurationToCustomers} onChange={() => { void handleToggleDuration(); }} disabled={durationPending} />
+          <div className={cn(
+            "w-12 h-6 rounded-full peer transition-colors after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all",
+            showDurationToCustomers ? "bg-primary/80 after:translate-x-6 after:border-white" : "bg-secondary peer-focus:ring-primary/30"
+          )}></div>
+        </label>
+      </div>
 
       <div className="flex flex-row-reverse gap-2.5 mt-3 animate-slide-up" style={{animationDelay: '0.2s'}}>
         {[
@@ -664,6 +800,7 @@ export default function Admin() {
           ['queue', 'الدور الحالي'], 
           ['appointments', 'المواعيد'],
           ['schedule', 'الجدول'],
+           ['barbers', 'الحلاقون'],
           ['services', 'الخدمات والأسعار'], 
           ['ages', 'الفئات العمرية'],
           ['products', 'المنتجات'],
@@ -871,6 +1008,46 @@ export default function Admin() {
               );
             })}
           </div>
+        </div>
+      )}
+
+      {tab === 'barbers' && (
+        <div className="animate-fade-in" dir="rtl">
+          <div className="mt-5 mb-4 flex flex-row items-center justify-between">
+            <button type="button" onClick={() => showBarber()} className="flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-xs font-bold text-primary-foreground active:scale-95">
+              <PlusCircle size={16} /> إضافة حلاق
+            </button>
+            <div className="text-right">
+              <h3 className="text-lg font-bold text-foreground">الحلاقون</h3>
+              <p className="mt-1 text-xs text-muted-foreground">الأسماء والصور التي تظهر أثناء اختيار الحلاق.</p>
+            </div>
+          </div>
+          {barbersLoading ? (
+            <Card className="p-6 text-center text-sm text-muted-foreground">جارٍ تحميل الحلاقين...</Card>
+          ) : (
+            <div className="space-y-2.5">
+              {adminBarbers.map((barber) => (
+                <Card key={barber.id} className={cn("flex flex-row-reverse items-center gap-3 p-4", !barber.active && "opacity-60")}>
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-primary/10">
+                    {barber.photoPath ? (
+                      <img src={barberPhotoUrl(barber.photoPath)} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <UserRound size={21} className="text-primary" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1 text-right">
+                    <div className="text-sm font-bold text-foreground">{barber.name}</div>
+                    <div className="mt-1 text-[11px] text-muted-foreground">{barber.active ? 'يظهر للزبائن' : 'مخفي — محفوظ للحجوزات السابقة'}</div>
+                  </div>
+                  <button type="button" onClick={() => showBarber(barber)} className="text-primary" aria-label={`تعديل ${barber.name}`}><Pencil size={17} /></button>
+                  {barber.active && (
+                    <button type="button" onClick={() => { void handleDeleteBarber(barber); }} disabled={actionPending} className="text-muted-foreground hover:text-destructive disabled:opacity-50" aria-label={`إخفاء ${barber.name}`}><Trash2 size={17} /></button>
+                  )}
+                </Card>
+              ))}
+              {adminBarbers.length === 0 && <Card className="p-6 text-center text-sm text-muted-foreground">لا يوجد حلاقون مضافون.</Card>}
+            </div>
+          )}
         </div>
       )}
 
@@ -1498,6 +1675,68 @@ export default function Admin() {
             </label>
             <button type="button" onClick={() => { void saveProductDraft(); }} disabled={actionPending} className="mt-5 flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-primary font-black text-primary-foreground disabled:opacity-50">
               <CheckCircle size={18} /> {actionPending ? 'جارٍ الحفظ...' : 'حفظ المنتج'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {barberModal && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-4 animate-fade-in" dir="rtl">
+          <div className="w-full max-w-md rounded-t-3xl border border-border bg-card p-6 pb-10 animate-slide-up">
+            <div className="mb-3 flex items-center justify-between">
+              <IconButton icon={X} label="إغلاق" onPress={() => setBarberModal(false)} />
+              <h2 className="text-xl font-black text-foreground">{editingBarber ? 'تعديل الحلاق' : 'إضافة حلاق'}</h2>
+            </div>
+            <input
+              value={barberDraft.name}
+              onChange={(event) => setBarberDraft({ ...barberDraft, name: event.target.value })}
+              placeholder="اسم الحلاق"
+              maxLength={80}
+              className="mt-4 h-12 w-full rounded-xl border border-border bg-black/20 px-4 text-right text-sm text-foreground outline-none focus:border-primary"
+            />
+            <div className="mt-4 flex flex-row-reverse items-center gap-3 rounded-2xl border border-border bg-black/10 p-3">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-primary/10">
+                {barberDraft.photoPath ? (
+                  <img src={barberPhotoUrl(barberDraft.photoPath)} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <UserRound size={25} className="text-primary" />
+                )}
+              </div>
+              <div className="min-w-0 flex-1 text-right">
+                <div className="text-xs font-bold text-foreground">الصورة (اختيارية)</div>
+                 <div className="mt-1 text-[10px] leading-5 text-muted-foreground">JPG أو PNG حتى 5 ميغابايت، أو رابط صورة خارجي</div>
+                <div className="mt-2 flex flex-row-reverse gap-2">
+                  <label className="inline-flex cursor-pointer flex-row-reverse items-center gap-1.5 rounded-xl border border-primary/30 px-3 py-2 text-[11px] font-black text-primary">
+                    <ImagePlus size={14} />
+                    {barberDraft.photoPath ? 'تغيير الصورة' : 'إضافة صورة'}
+                    <input type="file" accept="image/*" className="sr-only" disabled={actionPending} onChange={(event) => { void handleBarberPhoto(event.target.files?.[0]); event.currentTarget.value = ''; }} />
+                  </label>
+                  {barberDraft.photoPath && (
+                    <button type="button" onClick={() => setBarberDraft({ ...barberDraft, photoPath: null })} className="rounded-xl border border-destructive/30 px-3 py-2 text-[11px] font-black text-destructive">
+                      إزالة الصورة
+                    </button>
+                  )}
+                </div>
+              </div>
+             </div>
+             <label className="mt-3 block text-right text-[11px] font-bold text-muted-foreground">
+               رابط صورة خارجي (اختياري)
+               <input
+                 type="url"
+                 value={barberDraft.photoPath?.startsWith('http://') || barberDraft.photoPath?.startsWith('https://') ? barberDraft.photoPath : ''}
+                 onChange={(event) => setBarberDraft((current) => ({ ...current, photoPath: event.target.value || null }))}
+                 placeholder="https://example.com/barber.jpg"
+                 maxLength={2048}
+                 dir="ltr"
+                 className="mt-2 h-11 w-full rounded-xl border border-border bg-black/20 px-3 text-left text-xs font-normal text-foreground outline-none focus:border-primary"
+               />
+             </label>
+             <label className="mt-4 flex flex-row-reverse items-center justify-between rounded-xl border border-border p-4 text-sm font-bold text-foreground">
+              <span>يظهر للزبائن</span>
+              <input type="checkbox" checked={barberDraft.active} onChange={(event) => setBarberDraft({ ...barberDraft, active: event.target.checked })} className="h-5 w-5 accent-primary" />
+            </label>
+            <button type="button" onClick={() => { void saveBarberDraft(); }} disabled={actionPending} className="mt-5 flex h-14 w-full flex-row-reverse items-center justify-center gap-2 rounded-2xl bg-primary font-black text-primary-foreground disabled:opacity-50">
+              <CheckCircle size={18} /> {actionPending ? 'جارٍ الحفظ...' : 'حفظ الحلاق'}
             </button>
           </div>
         </div>

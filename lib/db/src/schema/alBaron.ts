@@ -149,6 +149,15 @@ export const salonShopInfo = pgTable("salon_shop_info", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const salonBarbers = pgTable("salon_barbers", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  photoPath: text("photo_path"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const salonTickets = pgTable("salon_tickets", {
   id: text("id").primaryKey(),
   number: integer("number").notNull(),
@@ -206,5 +215,6 @@ export const salonSettings = pgTable("salon_settings", {
   shopOpen: boolean("shop_open").notNull().default(true),
   firstAdminClaimed: boolean("first_admin_claimed").notNull().default(false),
   servicesSeeded: boolean("services_seeded").notNull().default(false),
+  showDurationToCustomers: boolean("show_duration_to_customers").notNull().default(true),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

@@ -5,11 +5,11 @@ import { useSalon } from '@/context/SalonContext';
 import { usePhoneAuth } from '@/context/AuthContext';
 import { BottomNavigation, Card, GoldButton, IconButtonLink, LogoMark, Screen, StatusPill, cn } from '@/components/SalonUI';
 import { barberCategory, trackEvent } from '@/lib/analytics';
+import { barberPhotoUrl } from '@/lib/api';
 
 type BookingStep = 1 | 2 | 3 | 4;
 type BookingMode = 'queue' | 'appointment';
 
-const barbers = ['أول حلاق متاح', 'سامر', 'فادي'];
 const namedDays = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 const salonTimeZone = 'Asia/Jerusalem';
 const paymentMethods = [
@@ -69,7 +69,7 @@ function salonCalendarDay(date: Date, offset: number) {
 
 export default function Booking() {
   const [, setLocation] = useLocation();
-  const { services, ageCategories, schedule, appointments, tickets, waitingTickets, shopInfo, selectedStyle, setSelectedStyle, joinQueue, bookAppointment, shopOpen } = useSalon();
+  const { services, barbers, ageCategories, schedule, appointments, tickets, waitingTickets, shopInfo, selectedStyle, setSelectedStyle, joinQueue, bookAppointment, shopOpen, showDurationToCustomers } = useSalon();
   const { user } = usePhoneAuth();
   const [step, setStep] = useState<BookingStep>(1);
   const [mode, setMode] = useState<BookingMode>(() => new URLSearchParams(window.location.search).get('mode') === 'appointment' ? 'appointment' : 'queue');
@@ -83,6 +83,10 @@ export default function Booking() {
   const [isComplete, setIsComplete] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [nowTick, setNowTick] = useState(() => Date.now());
+  const availableBarbers = useMemo(() => [
+    { id: 'available', name: 'أول حلاق متاح', photoPath: null },
+    ...barbers,
+  ], [barbers]);
 
   const visibleServices = useMemo(() => services.filter((service) => service.visible), [services]);
   const selectedService = visibleServices.find((service) => service.id === serviceId) ?? visibleServices[0];
@@ -169,6 +173,12 @@ export default function Booking() {
       setParticipantCategories((current) => [ageCategories[0].name, ...current.slice(1)]);
     }
   }, [ageCategories, participantCategories]);
+
+  useEffect(() => {
+    if (availableBarbers.length > 0 && !availableBarbers.some((item) => item.name === barber)) {
+      setBarber(availableBarbers[0].name);
+    }
+  }, [availableBarbers, barber]);
 
   useEffect(() => {
     if (availableTimes.length > 0 && !availableTimes.includes(time)) {
@@ -386,7 +396,10 @@ export default function Booking() {
                     </div>
                     <div className="flex-1">
                       <div className="text-sm font-bold text-foreground">{service.name}</div>
-                      <div className="mt-1 text-[11px] text-muted-foreground">{service.description} · {service.duration} دقيقة</div>
+                      <div className="mt-1 text-[11px] text-muted-foreground">
+                        {service.description}
+                        {showDurationToCustomers && ` · ${service.duration} دقيقة`}
+                      </div>
                     </div>
                     <div className="text-sm font-bold text-primary">{service.price} ₪</div>
                   </button>
@@ -407,22 +420,26 @@ export default function Booking() {
               <p className="mt-2 text-sm text-muted-foreground">اختر اسماً محدداً واليوم المناسب لموعدك.</p>
             </div>
             <div className="space-y-3">
-              {barbers.map((item) => {
-                const selected = barber === item;
+              {availableBarbers.map((item) => {
+                const selected = barber === item.name;
                 return (
                   <button
                     type="button"
-                    key={item}
-                    onClick={() => selectBarber(item)}
-                    data-testid={`button-barber-${item}`}
+                    key={item.id}
+                    onClick={() => selectBarber(item.name)}
+                    data-testid={`button-barber-${item.id}`}
                     className={cn('flex w-full flex-row-reverse items-center gap-4 rounded-2xl border p-4 text-right transition-colors', selected ? 'border-primary bg-primary/10' : 'border-border bg-card hover:border-primary/50')}
                   >
-                    <div className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl', item === 'سامر' ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground')}>
-                      <Crown size={19} />
+                    <div className={cn('flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl', item.name === 'سامر' ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground')}>
+                      {item.photoPath ? (
+                        <img src={barberPhotoUrl(item.photoPath)} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <Crown size={19} />
+                      )}
                     </div>
                     <div className="flex-1">
-                      <div className="text-sm font-bold text-foreground">{item}</div>
-                      <div className="mt-1 text-[11px] text-muted-foreground">{item === 'أول حلاق متاح' ? 'أقصر وقت انتظار' : 'اختيارك المفضل'}</div>
+                      <div className="text-sm font-bold text-foreground">{item.name}</div>
+                      <div className="mt-1 text-[11px] text-muted-foreground">{item.name === 'أول حلاق متاح' ? 'أقصر وقت انتظار' : 'اختيارك المفضل'}</div>
                     </div>
                     <div className={cn('h-5 w-5 rounded-full border-[1.5px] p-1', selected ? 'border-primary' : 'border-muted-foreground')}>
                       {selected && <div className="h-full w-full rounded-full bg-primary" />}
@@ -498,7 +515,7 @@ export default function Booking() {
                   إضافة شخص
                 </button>
               </div>
-              <p className="mt-2 text-center text-[10px] font-bold text-primary">مدة الخدمة المتوقعة: {selectedDuration} دقيقة</p>
+              {showDurationToCustomers && <p className="mt-2 text-center text-[10px] font-bold text-primary">مدة الخدمة المتوقعة: {selectedDuration} دقيقة</p>}
             </div>
               <div className="mt-6">
                 <h3 className="mb-3 text-right text-sm font-bold text-foreground">طريقة الدفع</h3>
@@ -645,8 +662,12 @@ export default function Booking() {
                 <span className="text-sm font-bold text-foreground">{participantCategories.length}</span>
               </div>
               <div className="flex flex-row-reverse items-center justify-between p-4">
-                <span className="text-xs text-muted-foreground">مدة الحجز</span>
-                <span className="text-sm font-bold text-primary">{selectedDuration} دقيقة</span>
+                {showDurationToCustomers && (
+                  <>
+                    <span className="text-xs text-muted-foreground">مدة الحجز</span>
+                    <span className="text-sm font-bold text-primary">{selectedDuration} دقيقة</span>
+                  </>
+                )}
               </div>
               <>
                   <div className="flex flex-row-reverse items-start justify-between gap-4 p-4">

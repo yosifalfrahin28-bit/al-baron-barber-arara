@@ -5,8 +5,8 @@
  * Shared Al-Baron Barber Shop API
  * OpenAPI spec version: 0.2.0
  */
+import type { BarberInput } from './barberInput';
 
-export interface Settings {
-  shopOpen: boolean;
-  showDurationToCustomers: boolean;
-}
+export type Barber = BarberInput & {
+  id: string;
+};
