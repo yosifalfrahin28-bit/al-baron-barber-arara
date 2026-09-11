@@ -9,6 +9,8 @@ tags:
   - name: health
   - name: salon
   - name: auth
+  - name: Storage
+    description: Object storage upload and serving endpoints.
 paths:
   /healthz:
     get:
@@ -658,6 +660,156 @@ paths:
       responses:
         "204":
           description: Service hidden
+  /barbers:
+    get:
+      operationId: listBarbers
+      tags: [salon]
+      summary: List active barbers
+      responses:
+        "200":
+          description: Active barbers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Barber"
+    post:
+      operationId: createBarber
+      tags: [salon]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BarberInput"
+      responses:
+        "201":
+          description: Created barber
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Barber"
+  /barbers/{id}:
+    patch:
+      operationId: updateBarber
+      tags: [salon]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BarberInput"
+      responses:
+        "200":
+          description: Updated barber
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Barber"
+    delete:
+      operationId: deactivateBarber
+      tags: [salon]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Barber deactivated without removing historical references
+  /storage/uploads/request-url:
+    post:
+      tags: [Storage]
+      operationId: requestUploadUrl
+      summary: Request a presigned URL for file upload
+      description: |
+        Returns a presigned GCS URL for direct upload. The client sends JSON
+        metadata here, then uploads the file directly to the returned URL.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadUrlRequest"
+      responses:
+        "200":
+          description: Presigned upload URL generated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadUrlResponse"
+        "400":
+          description: Missing or invalid required fields.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Failed to generate upload URL.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "503":
+          description: Object storage is not configured on this deployment; use an external image URL.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /storage/public-objects/{filePath}:
+    get:
+      tags: [Storage]
+      operationId: getPublicObject
+      summary: Serve a public asset
+      parameters:
+        - in: path
+          name: filePath
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Object content streamed
+          content:
+            "*/*":
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: File not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /storage/objects/{objectPath}:
+    get:
+      tags: [Storage]
+      operationId: getStorageObject
+      summary: Serve a stored barber photo
+      parameters:
+        - in: path
+          name: objectPath
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Object content streamed
+          content:
+            "*/*":
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Object not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /schedule-slots:
     post:
       operationId: createScheduleSlot
@@ -721,6 +873,7 @@ paths:
               required: [shopOpen]
               properties:
                 shopOpen: { type: boolean }
+                showDurationToCustomers: { type: boolean }
       responses:
         "200":
           description: Updated settings
@@ -1027,10 +1180,10 @@ components:
       type: object
       required: [name, description, price, duration, visible]
       properties:
-        name: { type: string }
+        name: { type: string, minLength: 1, maxLength: 80 }
         description: { type: string }
-        price: { type: integer }
-        duration: { type: integer }
+        price: { type: integer, minimum: 0 }
+        duration: { type: integer, minimum: 1, maximum: 1440 }
         visible: { type: boolean }
     Service:
       allOf:
@@ -1039,11 +1192,50 @@ components:
           required: [id]
           properties:
             id: { type: string }
+    BarberInput:
+      type: object
+      required: [name, active]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        photoPath:
+          description: Replit object path (/objects/...) or an externally hosted HTTP(S) image URL.
+          oneOf:
+            - type: string
+            - type: "null"
+        active: { type: boolean }
+    Barber:
+      allOf:
+        - $ref: "#/components/schemas/BarberInput"
+        - type: object
+          required: [id]
+          properties:
+            id: { type: string }
+    UploadUrlRequest:
+      type: object
+      required: [name, size, contentType]
+      properties:
+        name: { type: string, minLength: 1 }
+        size: { type: integer, minimum: 1, maximum: 5242880 }
+        contentType: { type: string, minLength: 1, pattern: "^image/" }
+    UploadUrlResponse:
+      type: object
+      required: [uploadURL, objectPath]
+      properties:
+        uploadURL: { type: string, format: uri }
+        objectPath: { type: string }
+        metadata:
+          $ref: "#/components/schemas/UploadUrlRequest"
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
     Settings:
       type: object
-      required: [shopOpen]
+      required: [shopOpen, showDurationToCustomers]
       properties:
         shopOpen: { type: boolean }
+        showDurationToCustomers: { type: boolean }
     SummonResult:
       type: object
       required: [sent, providerConnected, whatsappUrl]
@@ -1053,7 +1245,7 @@ components:
         whatsappUrl: { type: string }
     SalonState:
       type: object
-      required: [settings, services, currentTicket, waitingTickets, appointments, schedule]
+      required: [settings, services, barbers, currentTicket, waitingTickets, appointments, schedule]
       properties:
         settings:
           $ref: "#/components/schemas/Settings"
@@ -1061,6 +1253,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Service"
+        barbers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Barber"
         currentTicket:
           oneOf:
             - $ref: "#/components/schemas/Ticket"

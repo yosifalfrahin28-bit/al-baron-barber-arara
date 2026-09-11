@@ -6,19 +6,13 @@
  * OpenAPI spec version: 0.2.0
  */
 
-export interface ServiceInput {
+export interface BarberInput {
   /**
      * @minLength 1
      * @maxLength 80
      */
   name: string;
-  description: string;
-  /** @minimum 0 */
-  price: number;
-  /**
-     * @minimum 1
-     * @maximum 1440
-     */
-  duration: number;
-  visible: boolean;
+  /** Replit object path (/objects/...) or an externally hosted HTTP(S) image URL. */
+  photoPath?: string | null;
+  active: boolean;
 }

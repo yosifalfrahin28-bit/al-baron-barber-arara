@@ -361,9 +361,18 @@ export type ScheduleSlot = ScheduleSlotInput & {
 };
 
 export interface ServiceInput {
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
   name: string;
   description: string;
+  /** @minimum 0 */
   price: number;
+  /**
+     * @minimum 1
+     * @maximum 1440
+     */
   duration: number;
   visible: boolean;
 }
@@ -372,8 +381,49 @@ export type Service = ServiceInput & {
   id: string;
 };
 
+export interface BarberInput {
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  name: string;
+  /** Replit object path (/objects/...) or an externally hosted HTTP(S) image URL. */
+  photoPath?: string | null;
+  active: boolean;
+}
+
+export type Barber = BarberInput & {
+  id: string;
+};
+
+export interface UploadUrlRequest {
+  /** @minLength 1 */
+  name: string;
+  /**
+     * @minimum 1
+     * @maximum 5242880
+     */
+  size: number;
+  /**
+     * @minLength 1
+     * @pattern ^image/
+     */
+  contentType: string;
+}
+
+export interface UploadUrlResponse {
+  uploadURL: string;
+  objectPath: string;
+  metadata?: UploadUrlRequest;
+}
+
+export interface ErrorEnvelope {
+  error: string;
+}
+
 export interface Settings {
   shopOpen: boolean;
+  showDurationToCustomers: boolean;
 }
 
 export interface SummonResult {
@@ -385,6 +435,7 @@ export interface SummonResult {
 export interface SalonState {
   settings: Settings;
   services: Service[];
+  barbers: Barber[];
   currentTicket: Ticket | null;
   waitingTickets: Ticket[];
   appointments: Appointment[];
@@ -397,5 +448,6 @@ phone?: string;
 
 export type UpdateSettingsBody = {
   shopOpen: boolean;
+  showDurationToCustomers?: boolean;
 };
 

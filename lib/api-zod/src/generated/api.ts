@@ -19,6 +19,14 @@ export const HealthCheckResponse = zod.object({
 /**
  * @summary Read the live salon state
  */
+export const getSalonStateResponseServicesItemOneNameMax = 80;
+
+export const getSalonStateResponseServicesItemOnePriceMin = 0;
+
+export const getSalonStateResponseServicesItemOneDurationMax = 1440;
+
+export const getSalonStateResponseBarbersItemOneNameMax = 80;
+
 
 
 export const getSalonStateResponseCurrentTicketOneQueuePositionMin = 0;
@@ -41,14 +49,22 @@ export const getSalonStateResponseScheduleItemOneTimeRegExp = new RegExp('^[0-2]
 
 export const GetSalonStateResponse = zod.object({
   "settings": zod.object({
-  "shopOpen": zod.boolean()
+  "shopOpen": zod.boolean(),
+  "showDurationToCustomers": zod.boolean()
 }),
   "services": zod.array(zod.object({
-  "name": zod.string(),
+  "name": zod.string().min(1).max(getSalonStateResponseServicesItemOneNameMax),
   "description": zod.string(),
-  "price": zod.number().int(),
-  "duration": zod.number().int(),
+  "price": zod.number().int().min(getSalonStateResponseServicesItemOnePriceMin),
+  "duration": zod.number().int().min(1).max(getSalonStateResponseServicesItemOneDurationMax),
   "visible": zod.boolean()
+}).and(zod.object({
+  "id": zod.string()
+}))),
+  "barbers": zod.array(zod.object({
+  "name": zod.string().min(1).max(getSalonStateResponseBarbersItemOneNameMax),
+  "photoPath": zod.union([zod.string(),zod.null()]).optional().describe('Replit object path (\/objects\/...) or an externally hosted HTTP(S) image URL.'),
+  "active": zod.boolean()
 }).and(zod.object({
   "id": zod.string()
 }))),
@@ -870,11 +886,19 @@ export const CancelAppointmentResponse = zod.object({
 })
 
 
+export const listServicesResponseOneNameMax = 80;
+
+export const listServicesResponseOnePriceMin = 0;
+
+export const listServicesResponseOneDurationMax = 1440;
+
+
+
 export const ListServicesResponseItem = zod.object({
-  "name": zod.string(),
+  "name": zod.string().min(1).max(listServicesResponseOneNameMax),
   "description": zod.string(),
-  "price": zod.number().int(),
-  "duration": zod.number().int(),
+  "price": zod.number().int().min(listServicesResponseOnePriceMin),
+  "duration": zod.number().int().min(1).max(listServicesResponseOneDurationMax),
   "visible": zod.boolean()
 }).and(zod.object({
   "id": zod.string()
@@ -882,19 +906,35 @@ export const ListServicesResponseItem = zod.object({
 export const ListServicesResponse = zod.array(ListServicesResponseItem)
 
 
+export const createServiceBodyNameMax = 80;
+
+export const createServiceBodyPriceMin = 0;
+
+export const createServiceBodyDurationMax = 1440;
+
+
+
 export const CreateServiceBody = zod.object({
-  "name": zod.string(),
+  "name": zod.string().min(1).max(createServiceBodyNameMax),
   "description": zod.string(),
-  "price": zod.number().int(),
-  "duration": zod.number().int(),
+  "price": zod.number().int().min(createServiceBodyPriceMin),
+  "duration": zod.number().int().min(1).max(createServiceBodyDurationMax),
   "visible": zod.boolean()
 })
 
+export const createServiceResponseOneNameMax = 80;
+
+export const createServiceResponseOnePriceMin = 0;
+
+export const createServiceResponseOneDurationMax = 1440;
+
+
+
 export const CreateServiceResponse = zod.object({
-  "name": zod.string(),
+  "name": zod.string().min(1).max(createServiceResponseOneNameMax),
   "description": zod.string(),
-  "price": zod.number().int(),
-  "duration": zod.number().int(),
+  "price": zod.number().int().min(createServiceResponseOnePriceMin),
+  "duration": zod.number().int().min(1).max(createServiceResponseOneDurationMax),
   "visible": zod.boolean()
 }).and(zod.object({
   "id": zod.string()
@@ -905,19 +945,35 @@ export const UpdateServiceParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const updateServiceBodyNameMax = 80;
+
+export const updateServiceBodyPriceMin = 0;
+
+export const updateServiceBodyDurationMax = 1440;
+
+
+
 export const UpdateServiceBody = zod.object({
-  "name": zod.string(),
+  "name": zod.string().min(1).max(updateServiceBodyNameMax),
   "description": zod.string(),
-  "price": zod.number().int(),
-  "duration": zod.number().int(),
+  "price": zod.number().int().min(updateServiceBodyPriceMin),
+  "duration": zod.number().int().min(1).max(updateServiceBodyDurationMax),
   "visible": zod.boolean()
 })
 
+export const updateServiceResponseOneNameMax = 80;
+
+export const updateServiceResponseOnePriceMin = 0;
+
+export const updateServiceResponseOneDurationMax = 1440;
+
+
+
 export const UpdateServiceResponse = zod.object({
-  "name": zod.string(),
+  "name": zod.string().min(1).max(updateServiceResponseOneNameMax),
   "description": zod.string(),
-  "price": zod.number().int(),
-  "duration": zod.number().int(),
+  "price": zod.number().int().min(updateServiceResponseOnePriceMin),
+  "duration": zod.number().int().min(1).max(updateServiceResponseOneDurationMax),
   "visible": zod.boolean()
 }).and(zod.object({
   "id": zod.string()
@@ -929,6 +985,138 @@ export const HideServiceParams = zod.object({
 })
 
 export const HideServiceResponse = zod.void()
+
+
+/**
+ * @summary List active barbers
+ */
+export const listBarbersResponseOneNameMax = 80;
+
+
+
+export const ListBarbersResponseItem = zod.object({
+  "name": zod.string().min(1).max(listBarbersResponseOneNameMax),
+  "photoPath": zod.union([zod.string(),zod.null()]).optional().describe('Replit object path (\/objects\/...) or an externally hosted HTTP(S) image URL.'),
+  "active": zod.boolean()
+}).and(zod.object({
+  "id": zod.string()
+}))
+export const ListBarbersResponse = zod.array(ListBarbersResponseItem)
+
+
+export const createBarberBodyNameMax = 80;
+
+
+
+export const CreateBarberBody = zod.object({
+  "name": zod.string().min(1).max(createBarberBodyNameMax),
+  "photoPath": zod.union([zod.string(),zod.null()]).optional().describe('Replit object path (\/objects\/...) or an externally hosted HTTP(S) image URL.'),
+  "active": zod.boolean()
+})
+
+export const createBarberResponseOneNameMax = 80;
+
+
+
+export const CreateBarberResponse = zod.object({
+  "name": zod.string().min(1).max(createBarberResponseOneNameMax),
+  "photoPath": zod.union([zod.string(),zod.null()]).optional().describe('Replit object path (\/objects\/...) or an externally hosted HTTP(S) image URL.'),
+  "active": zod.boolean()
+}).and(zod.object({
+  "id": zod.string()
+}))
+
+
+export const UpdateBarberParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const updateBarberBodyNameMax = 80;
+
+
+
+export const UpdateBarberBody = zod.object({
+  "name": zod.string().min(1).max(updateBarberBodyNameMax),
+  "photoPath": zod.union([zod.string(),zod.null()]).optional().describe('Replit object path (\/objects\/...) or an externally hosted HTTP(S) image URL.'),
+  "active": zod.boolean()
+})
+
+export const updateBarberResponseOneNameMax = 80;
+
+
+
+export const UpdateBarberResponse = zod.object({
+  "name": zod.string().min(1).max(updateBarberResponseOneNameMax),
+  "photoPath": zod.union([zod.string(),zod.null()]).optional().describe('Replit object path (\/objects\/...) or an externally hosted HTTP(S) image URL.'),
+  "active": zod.boolean()
+}).and(zod.object({
+  "id": zod.string()
+}))
+
+
+export const DeactivateBarberParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const DeactivateBarberResponse = zod.void()
+
+
+/**
+ * Returns a presigned GCS URL for direct upload. The client sends JSON
+ * metadata here, then uploads the file directly to the returned URL.
+ * @summary Request a presigned URL for file upload
+ */
+
+export const requestUploadUrlBodySizeMax = 5242880;
+
+
+
+export const requestUploadUrlBodyContentTypeRegExp = new RegExp('^image');
+
+
+export const RequestUploadUrlBody = zod.object({
+  "name": zod.string().min(1),
+  "size": zod.number().int().min(1).max(requestUploadUrlBodySizeMax),
+  "contentType": zod.string().min(1).regex(requestUploadUrlBodyContentTypeRegExp)
+})
+
+
+export const requestUploadUrlResponseMetadataSizeMax = 5242880;
+
+
+
+export const requestUploadUrlResponseMetadataContentTypeRegExp = new RegExp('^image');
+
+
+export const RequestUploadUrlResponse = zod.object({
+  "uploadURL": zod.string().url(),
+  "objectPath": zod.string(),
+  "metadata": zod.object({
+  "name": zod.string().min(1),
+  "size": zod.number().int().min(1).max(requestUploadUrlResponseMetadataSizeMax),
+  "contentType": zod.string().min(1).regex(requestUploadUrlResponseMetadataContentTypeRegExp)
+}).optional()
+})
+
+
+/**
+ * @summary Serve a public asset
+ */
+export const GetPublicObjectParams = zod.object({
+  "filePath": zod.coerce.string()
+})
+
+export const GetPublicObjectResponse = zod.unknown()
+
+
+/**
+ * @summary Serve a stored barber photo
+ */
+export const GetStorageObjectParams = zod.object({
+  "objectPath": zod.coerce.string()
+})
+
+export const GetStorageObjectResponse = zod.unknown()
 
 
 export const createScheduleSlotBodyDayOfWeekMin = 0;
@@ -993,16 +1181,19 @@ export const UpdateScheduleSlotResponse = zod.object({
  * @summary Read current salon settings
  */
 export const GetSettingsResponse = zod.object({
-  "shopOpen": zod.boolean()
+  "shopOpen": zod.boolean(),
+  "showDurationToCustomers": zod.boolean()
 })
 
 
 export const UpdateSettingsBody = zod.object({
-  "shopOpen": zod.boolean()
+  "shopOpen": zod.boolean(),
+  "showDurationToCustomers": zod.boolean().optional()
 })
 
 export const UpdateSettingsResponse = zod.object({
-  "shopOpen": zod.boolean()
+  "shopOpen": zod.boolean(),
+  "showDurationToCustomers": zod.boolean()
 })
 
 

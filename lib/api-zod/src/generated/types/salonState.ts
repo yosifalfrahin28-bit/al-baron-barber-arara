@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.2.0
  */
 import type { Appointment } from './appointment';
+import type { Barber } from './barber';
 import type { ScheduleSlot } from './scheduleSlot';
 import type { Service } from './service';
 import type { Settings } from './settings';
@@ -14,6 +15,7 @@ import type { Ticket } from './ticket';
 export interface SalonState {
   settings: Settings;
   services: Service[];
+  barbers: Barber[];
   currentTicket: Ticket | null;
   waitingTickets: Ticket[];
   appointments: Appointment[];

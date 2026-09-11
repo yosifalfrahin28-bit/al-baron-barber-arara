@@ -4,6 +4,7 @@ import { barberCategory, trackEvent } from '@/lib/analytics';
 import { usePhoneAuth } from '@/context/AuthContext';
 import {
   type Appointment,
+  type Barber,
   type SalonState,
   type ScheduleSlot,
   type Service,
@@ -53,6 +54,7 @@ type ExtendedSalonState = SalonState & {
   ageCategories?: AgeCategory[];
   products?: Product[];
   shopInfo?: ShopInfo;
+  barbers?: Barber[];
 };
 
 type SalonContextValue = {
@@ -62,10 +64,12 @@ type SalonContextValue = {
   allAppointments: Appointment[];
   schedule: ScheduleSlot[];
   services: Service[];
+  barbers: Barber[];
   ageCategories: AgeCategory[];
   products: Product[];
   shopInfo: ShopInfo;
   shopOpen: boolean;
+  showDurationToCustomers: boolean;
   selectedStyle: string | null;
   lastReminderAt: string | null;
   isLoading: boolean;
@@ -79,7 +83,10 @@ type SalonContextValue = {
   addWalkIn: (name: string) => void;
   saveService: (service: Service) => Promise<void>;
   deleteService: (id: string) => Promise<void>;
+  saveBarber: (barber: Barber) => Promise<void>;
+  deleteBarber: (id: string) => Promise<void>;
   toggleShop: () => Promise<void>;
+  toggleDurationToCustomers: () => Promise<void>;
   summon: (id?: string, source?: 'account' | 'admin') => void;
   addScheduleSlot: (slot: { dayOfWeek: number; time: string; active: boolean }) => Promise<void>;
   updateScheduleSlot: (id: string, slot: { dayOfWeek: number; time: string; active: boolean }) => Promise<void>;
@@ -230,6 +237,30 @@ export function SalonProvider({ children }: { children: ReactNode }) {
     trackEvent('service_hidden', { surface: 'admin' });
     await refreshState();
   };
+
+  const saveBarber = async (barber: Barber): Promise<void> => {
+    const payload = { name: barber.name, photoPath: barber.photoPath, active: barber.active };
+    const currentBarbers = (stateQuery.data as ExtendedSalonState | undefined)?.barbers ?? [];
+    const saved = currentBarbers.some((item) => item.id === barber.id)
+      ? await sessionJson<Barber>(`/api/barbers/${barber.id}`, 'PATCH', payload)
+      : await sessionJson<Barber>('/api/barbers', 'POST', payload);
+    queryClient.setQueryData<ExtendedSalonState>(getGetSalonStateQueryKey(), (current) => current ? {
+      ...current,
+      barbers: current.barbers?.some((item) => item.id === saved.id)
+        ? current.barbers.map((item) => item.id === saved.id ? saved : item)
+        : [...(current.barbers ?? []), saved],
+    } : current);
+    await refreshState();
+  };
+
+  const deleteBarber = async (id: string): Promise<void> => {
+    await sessionRequest<void>(`/api/barbers/${id}`, { method: 'DELETE' });
+    queryClient.setQueryData<ExtendedSalonState>(getGetSalonStateQueryKey(), (current) => current ? {
+      ...current,
+      barbers: (current.barbers ?? []).filter((barber) => barber.id !== id),
+    } : current);
+    await refreshState();
+  };
   
   const toggleShop = async (): Promise<void> => {
     const shopOpen = !(stateQuery.data?.settings.shopOpen ?? true);
@@ -239,6 +270,16 @@ export function SalonProvider({ children }: { children: ReactNode }) {
       settings: { ...current.settings, shopOpen: result.shopOpen },
     } : current);
     trackEvent('shop_status_changed', { shop_open: shopOpen });
+    await refreshState();
+  };
+
+  const toggleDurationToCustomers = async (): Promise<void> => {
+    const showDurationToCustomers = !(stateQuery.data?.settings.showDurationToCustomers ?? true);
+    const result = await sessionJson<{ shopOpen: boolean; showDurationToCustomers: boolean }>('/api/settings', 'PATCH', { showDurationToCustomers });
+    queryClient.setQueryData<SalonState>(getGetSalonStateQueryKey(), (current) => current ? {
+      ...current,
+      settings: { ...current.settings, showDurationToCustomers: result.showDurationToCustomers },
+    } : current);
     await refreshState();
   };
   
@@ -336,10 +377,12 @@ export function SalonProvider({ children }: { children: ReactNode }) {
   const waitingTickets = stateQuery.data?.waitingTickets ?? [];
   const activeTicket = tickets.find((ticket) => ticket.phone === profile.phone && (ticket.status === 'waiting' || ticket.status === 'serving'));
   const allServices = stateQuery.data?.services ?? [];
+  const allBarbers = (stateQuery.data as ExtendedSalonState | undefined)?.barbers ?? [];
   const customerServiceIds = new Set(['customer-hair', 'customer-beard', 'customer-hair-beard']);
   const services = user?.role === 'admin'
     ? allServices
     : allServices.filter((service) => service.visible && customerServiceIds.has(service.id));
+  const barbers = allBarbers.filter((barber) => barber.active);
   const extendedState = stateQuery.data as ExtendedSalonState | undefined;
   const ageCategories = user?.role === 'admin'
     ? (extendedState?.ageCategories ?? [])
@@ -359,10 +402,12 @@ export function SalonProvider({ children }: { children: ReactNode }) {
     allAppointments,
     schedule,
     services,
+    barbers,
     ageCategories,
     products,
     shopInfo,
     shopOpen: stateQuery.data?.settings.shopOpen ?? true,
+    showDurationToCustomers: stateQuery.data?.settings.showDurationToCustomers ?? true,
     selectedStyle,
     lastReminderAt,
     isLoading: stateQuery.isLoading,
@@ -376,7 +421,10 @@ export function SalonProvider({ children }: { children: ReactNode }) {
     addWalkIn,
     saveService,
     deleteService,
+    saveBarber,
+    deleteBarber,
     toggleShop,
+    toggleDurationToCustomers,
     summon,
     addScheduleSlot,
     updateScheduleSlot,
@@ -389,7 +437,7 @@ export function SalonProvider({ children }: { children: ReactNode }) {
     saveShopInfo,
     activeTicket,
     waitingTickets,
-  }), [profile, tickets, appointments, allAppointments, schedule, services, ageCategories, products, shopInfo, stateQuery.data, stateQuery.isLoading, stateQuery.error, selectedStyle, lastReminderAt, activeTicket, waitingTickets]);
+  }), [profile, tickets, appointments, allAppointments, schedule, services, barbers, ageCategories, products, shopInfo, stateQuery.data, stateQuery.isLoading, stateQuery.error, selectedStyle, lastReminderAt, activeTicket, waitingTickets]);
 
   return <SalonContext.Provider value={value}>{children}</SalonContext.Provider>;
 }

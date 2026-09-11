@@ -8,4 +8,5 @@
 
 export type UpdateSettingsBody = {
   shopOpen: boolean;
+  showDurationToCustomers?: boolean;
 };
