@@ -4,7 +4,16 @@ const SESSION_TOKEN_KEY = 'al-baron-session-token';
 
 export function getSessionToken() {
   try {
-    return sessionStorage.getItem(SESSION_TOKEN_KEY);
+    const persistentToken = localStorage.getItem(SESSION_TOKEN_KEY);
+    if (persistentToken) return persistentToken;
+
+    // Preserve an existing signed-in session from older app versions.
+    const tabToken = sessionStorage.getItem(SESSION_TOKEN_KEY);
+    if (tabToken) {
+      localStorage.setItem(SESSION_TOKEN_KEY, tabToken);
+      sessionStorage.removeItem(SESSION_TOKEN_KEY);
+    }
+    return tabToken;
   } catch {
     return null;
   }
@@ -12,7 +21,8 @@ export function getSessionToken() {
 
 export function setSessionToken(token: string) {
   try {
-    sessionStorage.setItem(SESSION_TOKEN_KEY, token);
+    localStorage.setItem(SESSION_TOKEN_KEY, token);
+    sessionStorage.removeItem(SESSION_TOKEN_KEY);
   } catch {
     // The HTTP-only cookie remains the primary session mechanism.
   }
@@ -20,6 +30,7 @@ export function setSessionToken(token: string) {
 
 export function clearSessionToken() {
   try {
+    localStorage.removeItem(SESSION_TOKEN_KEY);
     sessionStorage.removeItem(SESSION_TOKEN_KEY);
   } catch {
     // Ignore storage restrictions; the server cookie is cleared separately.
