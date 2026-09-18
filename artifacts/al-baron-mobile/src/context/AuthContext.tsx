@@ -17,6 +17,8 @@ type PhoneAuthResponse = PhoneAuthUser & { sessionToken?: string };
 type AuthContextValue = {
   user: PhoneAuthUser | null;
   isLoading: boolean;
+  startupError: string;
+  retryStartup: () => void;
   requestCode: (phone: string, mode: 'sign-in' | 'sign-up', name?: string, password?: string) => Promise<string | null>;
   passwordLogin: (phone: string, password: string) => Promise<string | null>;
   requestPasswordReset: (phone: string) => Promise<string | null>;
@@ -48,6 +50,7 @@ async function postJson<T>(path: string, data?: unknown): Promise<T> {
     credentials: 'include',
     headers,
     body: data === undefined ? undefined : JSON.stringify(data),
+    signal: AbortSignal.timeout(60_000),
   });
   if (!response.ok) throw new Error(await readError(response));
   if (response.status === 204) return undefined as T;
@@ -56,35 +59,72 @@ async function postJson<T>(path: string, data?: unknown): Promise<T> {
 
 async function readSession() {
   const sessionToken = getSessionToken();
+  // A visitor without a saved session does not need to wait for a sleeping
+  // API server before seeing the sign-in screen.
+  if (!sessionToken) return null;
   const headers = sessionToken ? { Authorization: `Bearer ${sessionToken}` } : undefined;
   const response = await fetch(apiUrl('/api/auth/session'), {
     credentials: 'include',
     cache: 'no-store',
     headers,
+    signal: AbortSignal.timeout(60_000),
   });
   if (!response.ok) {
-    if (response.status === 401) clearSessionToken();
-    return null;
+    if (response.status === 401) {
+      clearSessionToken();
+      return null;
+    }
+    throw new Error(await readError(response));
   }
   return await response.json() as PhoneAuthUser;
+}
+
+let inFlightSessionRead: Promise<PhoneAuthUser | null> | null = null;
+
+function readSessionOnce() {
+  if (!inFlightSessionRead) {
+    inFlightSessionRead = readSession().finally(() => {
+      inFlightSessionRead = null;
+    });
+  }
+  return inFlightSessionRead;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<PhoneAuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [startupError, setStartupError] = useState('');
+  const [startupAttempt, setStartupAttempt] = useState(0);
 
   useEffect(() => {
-    readSession()
+    let active = true;
+    setStartupError('');
+    setIsLoading(Boolean(getSessionToken()));
+    // Wake a sleeping Render instance while the rest of the shell renders.
+    // This request is deliberately fire-and-forget; authentication remains
+    // authoritative through readSession below.
+    if (!getSessionToken()) void fetch(apiUrl('/healthz'), {
+      cache: 'no-store',
+      credentials: 'omit',
+      signal: AbortSignal.timeout(60_000),
+    }).catch(() => undefined);
+
+    readSessionOnce()
       .then((session) => {
-        if (session) setUser(session);
+        if (active) setUser(session);
       })
-      .catch(() => setUser(null))
-      .finally(() => setIsLoading(false));
-  }, []);
+      .catch(() => {
+        if (active) setStartupError('تعذر الاتصال بالخادم حالياً. حسابك محفوظ؛ حاول الاتصال مجدداً.');
+      })
+      .finally(() => { if (active) setIsLoading(false); });
+    return () => { active = false; };
+  }, [startupAttempt]);
 
   const value = useMemo<AuthContextValue>(() => ({
     user,
     isLoading,
+    startupError,
+    retryStartup: () => setStartupAttempt((attempt) => attempt + 1),
     requestCode: async (phone, mode, name, password) => {
       const response = await postJson<{ devOtp?: string }>(apiUrl('/api/auth/send-otp'), { phone, mode, ...(name ? { name } : {}), ...(password ? { password } : {}) });
       return response.devOtp ?? null;
@@ -100,16 +140,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     confirmPasswordReset: async (phone, code, password) => {
       const response = await postJson<PhoneAuthResponse>(apiUrl('/api/auth/password-reset/confirm'), { phone, code, password });
       if (response.sessionToken) setSessionToken(response.sessionToken);
-      const confirmedUser = await readSession();
-      const nextUser = confirmedUser ?? response;
+      // The verification endpoint already authenticated this user; avoid a
+      // second network round trip before opening the home screen.
+      const { sessionToken: _token, ...nextUser } = response;
       setUser(nextUser);
       return nextUser;
     },
     verifyCode: async (phone, code) => {
       const response = await postJson<PhoneAuthResponse>(apiUrl('/api/auth/phone/verify-code'), { phone, code });
       if (response.sessionToken) setSessionToken(response.sessionToken);
-      const confirmedUser = await readSession();
-      const nextUser = confirmedUser ?? response;
+      const { sessionToken: _token, ...nextUser } = response;
       setUser(nextUser);
       return nextUser;
     },
@@ -121,7 +161,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
       }
     },
-  }), [isLoading, user]);
+  }), [isLoading, user, startupError]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

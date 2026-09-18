@@ -175,7 +175,7 @@ function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-
       } else {
         await verifyCode(phone, code);
       }
-      window.location.replace('/home');
+      setLocation('/home');
     } catch (verifyError) {
       setError(verifyError instanceof Error ? verifyError.message : 'رمز التحقق غير صحيح');
     } finally {
@@ -430,9 +430,25 @@ function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-
 }
 
 function ProtectedPage({ children }: { children: ReactNode }) {
-  const { user, isLoading } = usePhoneAuth();
-  if (isLoading) {
-    return <Screen className="items-center justify-center"><p className="text-sm text-muted-foreground">جارٍ تحميل حسابك...</p></Screen>;
+  const { user, isLoading, startupError, retryStartup } = usePhoneAuth();
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    setSlow(false);
+    if (!isLoading) return;
+    const timer = window.setTimeout(() => setSlow(true), 3000);
+    return () => window.clearTimeout(timer);
+  }, [isLoading]);
+  if (isLoading || startupError) {
+    return (
+      <Screen className="items-center justify-center">
+        <div role="status" className="max-w-sm rounded-2xl bg-black/80 p-6 text-center">
+          <LogoMark />
+          <p className="mt-5 text-sm text-white">{startupError || 'جارٍ فتح حسابك...'}</p>
+          {!startupError && slow && <p className="mt-3 text-sm leading-7 text-white/75">الخادم يستيقظ بعد فترة خمول، وقد يستغرق ذلك نحو دقيقة. لا حاجة لإعادة تسجيل الدخول.</p>}
+          {startupError && <button type="button" onClick={retryStartup} className="mt-5 rounded-xl bg-primary px-6 py-3 font-bold text-primary-foreground">إعادة الاتصال</button>}
+        </div>
+      </Screen>
+    );
   }
   return user ? <SalonProvider>{children}</SalonProvider> : <AuthScreen initialMode="sign-in" />;
 }
