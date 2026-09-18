@@ -404,6 +404,7 @@ function App() {
 
 function IosInstallPrompt() {
   const [visible, setVisible] = useState(false);
+  const [shareNotice, setShareNotice] = useState('');
 
   useEffect(() => {
     const userAgent = navigator.userAgent;
@@ -432,15 +433,48 @@ function IosInstallPrompt() {
     setVisible(false);
   };
 
+  const shareApp = async () => {
+    const shareData = {
+      title: 'صالون البارون',
+      text: 'احجز موعدك أو دورك من صالون البارون',
+      url: window.location.href,
+    };
+
+    try {
+      if (typeof navigator.share === 'function') {
+        await navigator.share(shareData);
+        return;
+      }
+
+      await navigator.clipboard.writeText(window.location.href);
+      setShareNotice('تم نسخ رابط التطبيق');
+      window.setTimeout(() => setShareNotice(''), 2500);
+    } catch (error) {
+      // Closing the native share sheet is not an error.
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      setShareNotice('تعذرت المشاركة حالياً');
+      window.setTimeout(() => setShareNotice(''), 2500);
+    }
+  };
+
   return (
     <aside className="ios-install-prompt" role="status" dir="rtl">
       <button className="ios-install-prompt-close" onClick={dismiss} aria-label="إغلاق">
         <X size={16} />
       </button>
-      <div className="ios-install-prompt-icon" aria-hidden="true"><Share2 size={18} /></div>
+      <button
+        type="button"
+        className="ios-install-prompt-icon cursor-pointer transition-transform hover:scale-105 active:scale-95"
+        onClick={() => void shareApp()}
+        aria-label="مشاركة تطبيق البارون"
+        title="مشاركة التطبيق"
+      >
+        <Share2 size={18} />
+      </button>
       <div className="ios-install-prompt-copy">
         <strong>ثبّت تطبيق البارون على جهازك</strong>
         <span>من Safari اضغط «مشاركة» ثم «إضافة إلى الشاشة الرئيسية».</span>
+        {shareNotice && <small role="status">{shareNotice}</small>}
       </div>
     </aside>
   );
