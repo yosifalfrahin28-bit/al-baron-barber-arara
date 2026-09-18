@@ -5,6 +5,7 @@ import { useLocation } from 'wouter';
 import { usePhoneAuth } from '@/context/AuthContext';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { ShopBackground } from './ShopBackground';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -13,18 +14,7 @@ export function cn(...inputs: ClassValue[]) {
 export function Screen({ children, scroll = true, className }: { children: ReactNode; scroll?: boolean; className?: string }) {
   return (
     <div className={cn("relative isolate min-h-[100dvh] w-full bg-transparent flex flex-col", scroll ? "overflow-y-auto" : "overflow-hidden", className)}>
-      <div className="sky-scene" aria-hidden="true">
-        <div className="sky-stars sky-stars-far" />
-        <div className="sky-stars sky-stars-near" />
-        <div className="scissor-constellation">
-          <span className="scissor-handle scissor-handle-top" />
-          <span className="scissor-handle scissor-handle-bottom" />
-          <span className="scissor-pivot" />
-          <span className="scissor-arm scissor-arm-top" />
-          <span className="scissor-arm scissor-arm-bottom" />
-          {Array.from({ length: 14 }, (_, index) => <span key={index} className="scissor-star" />)}
-        </div>
-      </div>
+      <ShopBackground />
       <div className="relative z-10 flex-1 w-full max-w-md mx-auto p-5 pb-28 flex flex-col">
         {children}
       </div>
