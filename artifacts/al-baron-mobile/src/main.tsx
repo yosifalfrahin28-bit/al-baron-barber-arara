@@ -45,6 +45,40 @@ function isValidIsraeliPhone(value: string) {
   return normalizePhoneInput(value).length > 0;
 }
 
+async function shareApplication() {
+  const shareData = {
+    title: 'صالون البارون',
+    text: 'احجز موعدك أو دورك من صالون البارون',
+    url: window.location.href,
+  };
+
+  if (typeof navigator.share === 'function') {
+    await navigator.share(shareData);
+    return 'shared' as const;
+  }
+
+  const copyText = async () => {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(window.location.href);
+      return;
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.value = window.location.href;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const copied = document.execCommand('copy');
+    textarea.remove();
+    if (!copied) throw new Error('copy-failed');
+  };
+
+  await copyText();
+  return 'copied' as const;
+}
+
 function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-in" | "sign-up"; initialReset?: boolean }) {
   const { requestCode, passwordLogin, requestPasswordReset, confirmPasswordReset, verifyCode } = usePhoneAuth();
   const [, setLocation] = useLocation();
@@ -57,6 +91,7 @@ function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-
   const [step, setStep] = useState<'details' | 'otp'>('details');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [shareNotice, setShareNotice] = useState('');
   const [devOtp, setDevOtp] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [resetMode, setResetMode] = useState(initialReset);
@@ -158,6 +193,17 @@ function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-
       setError(requestError instanceof Error ? requestError.message : 'تعذر إعادة إرسال الرمز');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleShare = async () => {
+    setShareNotice('');
+    try {
+      const result = await shareApplication();
+      setShareNotice(result === 'copied' ? 'تم نسخ رابط التطبيق' : 'تم فتح المشاركة');
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      setShareNotice('تعذرت المشاركة حالياً');
     }
   };
 
@@ -281,6 +327,15 @@ function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-
                   </button>
                 )}
               </form>
+              <button
+                type="button"
+                onClick={() => void handleShare()}
+                className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-primary/35 bg-primary/5 text-xs font-black text-primary transition-colors hover:bg-primary/10 active:scale-[0.99]"
+              >
+                <Share2 size={16} />
+                مشاركة التطبيق
+              </button>
+              {shareNotice && <p role="status" className="mt-2 text-center text-[11px] font-bold text-primary">{shareNotice}</p>}
             </>
           ) : (
             <div className="text-center">
@@ -404,6 +459,7 @@ function App() {
 
 function IosInstallPrompt() {
   const [visible, setVisible] = useState(false);
+  const [shareNotice, setShareNotice] = useState('');
 
   useEffect(() => {
     const userAgent = navigator.userAgent;
@@ -432,15 +488,37 @@ function IosInstallPrompt() {
     setVisible(false);
   };
 
+  const shareApp = async () => {
+    try {
+      const result = await shareApplication();
+      setShareNotice(result === 'copied' ? 'تم نسخ رابط التطبيق' : 'تم فتح المشاركة');
+      window.setTimeout(() => setShareNotice(''), 2500);
+    } catch (error) {
+      // Closing the native share sheet is not an error.
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      setShareNotice('تعذرت المشاركة حالياً');
+      window.setTimeout(() => setShareNotice(''), 2500);
+    }
+  };
+
   return (
     <aside className="ios-install-prompt" role="status" dir="rtl">
       <button className="ios-install-prompt-close" onClick={dismiss} aria-label="إغلاق">
         <X size={16} />
       </button>
-      <div className="ios-install-prompt-icon" aria-hidden="true"><Share2 size={18} /></div>
+      <button
+        type="button"
+        className="ios-install-prompt-icon cursor-pointer transition-transform hover:scale-105 active:scale-95"
+        onClick={() => void shareApp()}
+        aria-label="مشاركة تطبيق البارون"
+        title="مشاركة التطبيق"
+      >
+        <Share2 size={18} />
+      </button>
       <div className="ios-install-prompt-copy">
         <strong>ثبّت تطبيق البارون على جهازك</strong>
         <span>من Safari اضغط «مشاركة» ثم «إضافة إلى الشاشة الرئيسية».</span>
+        {shareNotice && <small role="status">{shareNotice}</small>}
       </div>
     </aside>
   );

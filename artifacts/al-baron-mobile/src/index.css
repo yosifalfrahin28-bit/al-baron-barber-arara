@@ -32,9 +32,44 @@
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
+    position: relative;
+    isolation: isolate;
     background: #070707;
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
     -webkit-tap-highlight-color: transparent;
+  }
+
+  body::before,
+  body::after {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    content: "";
+    background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
+    filter: saturate(0.72) contrast(0.9);
+  }
+
+  body::before {
+    background-image:
+      linear-gradient(180deg, rgba(7, 7, 7, 0.88), rgba(7, 7, 7, 0.72)),
+      url("/barber-shop-background-1.jpeg");
+    opacity: 0.66;
+  }
+
+  body::after {
+    background-image:
+      linear-gradient(180deg, rgba(7, 7, 7, 0.9), rgba(7, 7, 7, 0.78)),
+      url("/barber-shop-background-2.jpeg");
+    opacity: 0.28;
+    mix-blend-mode: screen;
+  }
+
+  #root {
+    position: relative;
+    z-index: 0;
   }
 }
 
