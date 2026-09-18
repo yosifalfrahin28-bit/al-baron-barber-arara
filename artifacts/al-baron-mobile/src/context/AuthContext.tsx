@@ -56,6 +56,9 @@ async function postJson<T>(path: string, data?: unknown): Promise<T> {
 
 async function readSession() {
   const sessionToken = getSessionToken();
+  // A visitor without a saved session does not need to wait for a sleeping
+  // API server before seeing the sign-in screen.
+  if (!sessionToken) return null;
   const headers = sessionToken ? { Authorization: `Bearer ${sessionToken}` } : undefined;
   const response = await fetch(apiUrl('/api/auth/session'), {
     credentials: 'include',
@@ -74,6 +77,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    // Wake a sleeping Render instance while the rest of the shell renders.
+    // This request is deliberately fire-and-forget; authentication remains
+    // authoritative through readSession below.
+    void fetch(apiUrl('/healthz'), {
+      cache: 'no-store',
+      credentials: 'omit',
+    }).catch(() => undefined);
+
     readSession()
       .then((session) => {
         if (session) setUser(session);
