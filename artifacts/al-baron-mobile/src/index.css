@@ -73,6 +73,34 @@
   }
 }
 
+.login-panel {
+  position: relative;
+  overflow: hidden;
+}
+
+.login-panel::before {
+  position: absolute;
+  right: 14%;
+  bottom: 0;
+  left: 14%;
+  height: 2px;
+  content: "";
+  background: linear-gradient(90deg, transparent, rgba(212, 175, 55, 0.95), transparent);
+  box-shadow: 0 0 18px rgba(212, 175, 55, 0.35);
+}
+
+.login-brand {
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.5));
+}
+
+.login-field input {
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.login-field input:focus {
+  box-shadow: 0 6px 18px -14px rgba(212, 175, 55, 0.9);
+}
+
 .ios-install-prompt {
   position: fixed;
   right: max(1rem, env(safe-area-inset-right));

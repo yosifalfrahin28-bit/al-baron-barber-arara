@@ -209,12 +209,12 @@ function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-
 
   return (
     <Screen className="items-center justify-center">
-      <div className="flex w-full max-w-sm flex-col items-center py-6" dir="rtl">
-        <div className="mb-8"><LogoMark /></div>
-        <div className="w-full rounded-[28px] border border-primary/25 bg-card/70 p-5 shadow-2xl shadow-black/30 backdrop-blur-xl">
+      <div className="login-shell flex w-full max-w-sm flex-col items-center py-8" dir="rtl">
+        <div className="login-brand mb-8 scale-125"><LogoMark /></div>
+        <div className="login-panel w-full rounded-[28px] border border-primary/30 bg-black/55 p-5 shadow-2xl shadow-black/50 backdrop-blur-xl">
           {step === 'details' ? (
             <>
-              <div className="rounded-2xl bg-secondary/70 p-1.5">
+              <div className="login-tabs border-b border-white/10 pb-3">
                 <div className="grid grid-cols-2 gap-1.5">
                   {[
                     { value: 'sign-in' as const, label: 'تسجيل الدخول' },
@@ -224,7 +224,7 @@ function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-
                       key={tab.value}
                       type="button"
                       onClick={() => switchMode(tab.value)}
-                      className={`min-h-11 rounded-xl px-2 text-xs font-black transition-all ${mode === tab.value ? 'bg-primary text-primary-foreground shadow-lg' : 'text-muted-foreground hover:text-foreground'}`}
+                      className={`min-h-11 rounded-xl px-2 text-xs font-black transition-all ${mode === tab.value ? 'bg-[#f7f4ed] text-[#161616] shadow-lg' : 'text-white/60 hover:bg-white/5 hover:text-white'}`}
                     >
                       {tab.label}
                     </button>
@@ -233,18 +233,18 @@ function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-
               </div>
 
               <div className="mt-7 text-right">
-                <p className="text-xs font-bold tracking-[0.16em] text-primary">AL-BARON</p>
-                <h1 className="mt-2 text-2xl font-black text-foreground">
+                <p className="text-xs font-bold tracking-[0.2em] text-primary">AL-BARON</p>
+                <h1 className="mt-2 text-2xl font-black text-white">
                   {resetMode ? 'استعادة كلمة المرور' : mode === 'sign-in' ? 'أهلاً بعودتك' : 'انضم إلى صالون البارون'}
                 </h1>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                <p className="mt-2 text-sm leading-6 text-white/55">
                   {resetMode ? 'سنرسل رمزاً إلى WhatsApp المرتبط بالرقم لتعيين كلمة مرور جديدة.' : mode === 'sign-in' ? 'سجّل الدخول برقم هاتفك وكلمة المرور.' : 'أنشئ حسابك بالاسم والهاتف وكلمة المرور للبدء.'}
                 </p>
               </div>
 
-              <form onSubmit={submitDetails} className="mt-7 space-y-4">
+              <form onSubmit={submitDetails} className="mt-7 space-y-5">
                 {mode === 'sign-up' && !resetMode && (
-                  <label className="block text-right text-sm font-bold text-foreground">
+                  <label className="login-field block text-right text-sm font-bold text-white">
                     الاسم الكامل
                     <input
                       required
@@ -253,11 +253,11 @@ function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-
                       onChange={(event) => setName(event.target.value)}
                       placeholder="اكتب اسمك الكامل"
                       autoComplete="name"
-                      className="mt-2 h-12 w-full rounded-xl border border-border bg-black/30 px-4 text-right text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
+                      className="mt-1 h-12 w-full rounded-none border-0 border-b border-white/20 bg-transparent px-1 text-right text-white outline-none placeholder:text-white/30 focus:border-primary"
                     />
                   </label>
                 )}
-                <label className="block text-right text-sm font-bold text-foreground">
+                <label className="login-field block text-right text-sm font-bold text-white">
                   رقم الهاتف
                   <input
                     required
@@ -268,13 +268,13 @@ function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-
                     placeholder="05X XXX XXXX"
                     autoComplete="tel"
                     dir="ltr"
-                    className="mt-2 h-12 w-full rounded-xl border border-border bg-black/30 px-4 text-left text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
+                    className="mt-1 h-12 w-full rounded-none border-0 border-b border-white/20 bg-transparent px-1 text-left text-white outline-none placeholder:text-white/30 focus:border-primary"
                   />
-                  <span className="mt-1.5 block text-right text-[11px] font-normal text-muted-foreground">
+                  <span className="mt-1.5 block text-right text-[11px] font-normal text-white/45">
                     مثال: <span dir="ltr" className="inline-block">052 123 4567</span>
                   </span>
                 </label>
-                <label className="relative block text-right text-sm font-bold text-foreground">
+                <label className="login-field relative block text-right text-sm font-bold text-white">
                   {resetMode ? 'كلمة المرور الجديدة' : 'كلمة المرور'}
                   {mode === 'sign-in' && !resetMode && (
                     <button type="button" onClick={() => { setResetMode(true); setError(''); setNotice(''); setPassword(''); setPasswordConfirmation(''); }} className="absolute left-0 top-0 text-[10px] font-black text-primary underline-offset-2 hover:underline">
@@ -290,11 +290,11 @@ function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-
                     placeholder="8 أحرف على الأقل"
                   autoComplete={mode === 'sign-in' && !resetMode ? 'current-password' : 'new-password'}
                     dir="ltr"
-                    className="mt-2 h-12 w-full rounded-xl border border-border bg-black/30 px-4 text-left text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
+                    className="mt-1 h-12 w-full rounded-none border-0 border-b border-white/20 bg-transparent px-1 text-left text-white outline-none placeholder:text-white/30 focus:border-primary"
                   />
                 </label>
                 {(mode === 'sign-up' || resetMode) && (
-                  <label className="block text-right text-sm font-bold text-foreground">
+                  <label className="login-field block text-right text-sm font-bold text-white">
                     {resetMode ? 'تأكيد كلمة المرور الجديدة' : 'تأكيد كلمة المرور'}
                     <input
                       required
@@ -305,7 +305,7 @@ function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-
                       placeholder="أعد كتابة كلمة المرور"
                       autoComplete="new-password"
                       dir="ltr"
-                      className="mt-2 h-12 w-full rounded-xl border border-border bg-black/30 px-4 text-left text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
+                      className="mt-1 h-12 w-full rounded-none border-0 border-b border-white/20 bg-transparent px-1 text-left text-white outline-none placeholder:text-white/30 focus:border-primary"
                     />
                   </label>
                 )}
@@ -318,7 +318,7 @@ function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-
                   </div>
                 )}
                 {error && <p className="rounded-xl bg-destructive/10 p-3 text-right text-xs text-destructive">{error}</p>}
-                <button disabled={submitting} className="h-14 w-full rounded-xl bg-primary font-black text-primary-foreground transition-opacity disabled:opacity-60">
+                <button disabled={submitting} className="login-primary-button h-14 w-full rounded-xl bg-primary font-black text-primary-foreground transition-all hover:brightness-105 disabled:opacity-60">
                   {submitting ? (resetMode ? 'جارٍ إرسال رمز الاستعادة...' : mode === 'sign-in' ? 'جارٍ تسجيل الدخول...' : 'جارٍ إرسال رمز التحقق...') : resetMode ? 'إرسال رمز الاستعادة' : mode === 'sign-in' ? 'تسجيل الدخول' : 'إنشاء الحساب وإرسال الرمز'}
                 </button>
                 {resetMode && (
