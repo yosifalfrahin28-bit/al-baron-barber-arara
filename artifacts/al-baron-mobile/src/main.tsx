@@ -210,7 +210,9 @@ function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-
   return (
     <Screen className="items-center justify-center">
       <div className="login-shell flex w-full max-w-sm flex-col items-center py-8" dir="rtl">
-        <div className="login-brand mb-8 scale-125"><LogoMark /></div>
+        <div className="login-brand mb-8" aria-label="شعار صالون البارون">
+          <img src="/icon-512.png" alt="شعار صالون البارون" />
+        </div>
         <div className="login-panel w-full rounded-[28px] border border-primary/30 bg-black/55 p-5 shadow-2xl shadow-black/50 backdrop-blur-xl">
           {step === 'details' ? (
             <>
