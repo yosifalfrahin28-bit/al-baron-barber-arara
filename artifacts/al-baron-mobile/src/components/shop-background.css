@@ -1,0 +1,33 @@
+.shop-photo-background {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: #080807;
+}
+
+.shop-photo-background img,
+.shop-photo-shade {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.shop-photo-background img {
+  object-fit: cover;
+  object-position: 53% 48%;
+  filter: saturate(0.65);
+}
+
+.shop-photo-detail {
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 48%);
+  mask-image: linear-gradient(to bottom, transparent, #000 48%);
+}
+
+.shop-photo-shade {
+  background:
+    linear-gradient(to bottom, rgba(5, 5, 5, 0.82), rgba(5, 5, 5, 0.74) 40%, rgba(5, 5, 5, 0.88)),
+    linear-gradient(to right, rgba(0, 0, 0, 0.2), transparent 45%, rgba(0, 0, 0, 0.2));
+}

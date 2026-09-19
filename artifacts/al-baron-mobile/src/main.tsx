@@ -7,9 +7,11 @@ import { configuredApiBase } from "./lib/api";
 import { getSessionToken } from "./lib/session-api";
 
 import "./index.css";
+import "./auth.css";
 import { SalonProvider } from "./context/SalonContext";
 import { AuthProvider, usePhoneAuth } from "./context/AuthContext";
 import { Screen, LogoMark } from "./components/SalonUI";
+import { ShopBackground } from "./components/ShopBackground";
 import Home from "./pages/Home";
 import Booking from "./pages/Booking";
 import Account from "./pages/Account";
@@ -19,7 +21,7 @@ import WhatsAppQr from "./pages/WhatsAppQr";
 import WhatsAppSetup from "./pages/WhatsAppSetup";
 import Reviews from "./pages/Reviews";
 import NotFound from "./pages/NotFound";
-import { Share2, X } from "lucide-react";
+import { Share2, X, Mail } from "lucide-react";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -45,6 +47,40 @@ function isValidIsraeliPhone(value: string) {
   return normalizePhoneInput(value).length > 0;
 }
 
+async function shareApplication() {
+  const shareData = {
+    title: 'صالون البارون',
+    text: 'احجز موعدك أو دورك من صالون البارون',
+    url: window.location.href,
+  };
+
+  if (typeof navigator.share === 'function') {
+    await navigator.share(shareData);
+    return 'shared' as const;
+  }
+
+  const copyText = async () => {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(window.location.href);
+      return;
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.value = window.location.href;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const copied = document.execCommand('copy');
+    textarea.remove();
+    if (!copied) throw new Error('copy-failed');
+  };
+
+  await copyText();
+  return 'copied' as const;
+}
+
 function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-in" | "sign-up"; initialReset?: boolean }) {
   const { requestCode, passwordLogin, requestPasswordReset, confirmPasswordReset, verifyCode } = usePhoneAuth();
   const [, setLocation] = useLocation();
@@ -57,6 +93,7 @@ function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-
   const [step, setStep] = useState<'details' | 'otp'>('details');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [shareNotice, setShareNotice] = useState('');
   const [devOtp, setDevOtp] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [resetMode, setResetMode] = useState(initialReset);
@@ -138,7 +175,7 @@ function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-
       } else {
         await verifyCode(phone, code);
       }
-      window.location.replace('/home');
+      setLocation('/home');
     } catch (verifyError) {
       setError(verifyError instanceof Error ? verifyError.message : 'رمز التحقق غير صحيح');
     } finally {
@@ -161,179 +198,257 @@ function AuthScreen({ initialMode, initialReset = false }: { initialMode: "sign-
     }
   };
 
+  const handleShare = async () => {
+    setShareNotice('');
+    try {
+      const result = await shareApplication();
+      setShareNotice(result === 'copied' ? 'تم نسخ رابط التطبيق' : 'تم فتح المشاركة');
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      setShareNotice('تعذرت المشاركة حالياً');
+    }
+  };
+
   return (
-    <Screen className="items-center justify-center">
-      <div className="flex w-full max-w-sm flex-col items-center py-6" dir="rtl">
-        <div className="mb-8"><LogoMark /></div>
-        <div className="w-full rounded-[28px] border border-primary/25 bg-card/70 p-5 shadow-2xl shadow-black/30 backdrop-blur-xl">
-          {step === 'details' ? (
-            <>
-              <div className="rounded-2xl bg-secondary/70 p-1.5">
-                <div className="grid grid-cols-2 gap-1.5">
-                  {[
-                    { value: 'sign-in' as const, label: 'تسجيل الدخول' },
-                    { value: 'sign-up' as const, label: 'إنشاء حساب جديد' },
-                  ].map((tab) => (
-                    <button
-                      key={tab.value}
-                      type="button"
-                      onClick={() => switchMode(tab.value)}
-                      className={`min-h-11 rounded-xl px-2 text-xs font-black transition-all ${mode === tab.value ? 'bg-primary text-primary-foreground shadow-lg' : 'text-muted-foreground hover:text-foreground'}`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+    <div className="auth-layout" dir="rtl">
+      <ShopBackground />
 
-              <div className="mt-7 text-right">
-                <p className="text-xs font-bold tracking-[0.16em] text-primary">AL-BARON</p>
-                <h1 className="mt-2 text-2xl font-black text-foreground">
-                  {resetMode ? 'استعادة كلمة المرور' : mode === 'sign-in' ? 'أهلاً بعودتك' : 'انضم إلى صالون البارون'}
-                </h1>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  {resetMode ? 'سنرسل رمزاً إلى WhatsApp المرتبط بالرقم لتعيين كلمة مرور جديدة.' : mode === 'sign-in' ? 'سجّل الدخول برقم هاتفك وكلمة المرور.' : 'أنشئ حسابك بالاسم والهاتف وكلمة المرور للبدء.'}
-                </p>
-              </div>
+      <div className="auth-content">
+        <div className="auth-logo-area">
+          <img src={`${import.meta.env.BASE_URL || '/'}icon-512.png`.replace('//', '/')} alt="شعار صالون البارون" />
+        </div>
 
-              <form onSubmit={submitDetails} className="mt-7 space-y-4">
-                {mode === 'sign-up' && !resetMode && (
-                  <label className="block text-right text-sm font-bold text-foreground">
-                    الاسم الكامل
-                    <input
-                      required
-                      minLength={2}
-                      value={name}
-                      onChange={(event) => setName(event.target.value)}
-                      placeholder="اكتب اسمك الكامل"
-                      autoComplete="name"
-                      className="mt-2 h-12 w-full rounded-xl border border-border bg-black/30 px-4 text-right text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
-                    />
-                  </label>
-                )}
-                <label className="block text-right text-sm font-bold text-foreground">
-                  رقم الهاتف
+        <div className="auth-wave-wrapper">
+          <svg viewBox="0 0 390 80" className="w-full h-auto max-w-[320px]" preserveAspectRatio="xMidYMid meet">
+            <path
+              d="M-20,30 C120,70 260,-10 410,40"
+              fill="none"
+              stroke="url(#goldGradientWave)"
+              strokeWidth="3.5"
+            />
+            <path
+              d="M-20,45 C120,85 260,5 410,55"
+              fill="none"
+              stroke="url(#goldGradientWave)"
+              strokeWidth="1.5"
+              opacity="0.4"
+            />
+            <defs>
+              <linearGradient id="goldGradientWave" x1="0" y1="0" x2="390" y2="0" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor="#8A6B27" />
+                <stop offset="30%" stopColor="#FDE08B" />
+                <stop offset="70%" stopColor="#D4AF37" />
+                <stop offset="100%" stopColor="#8A6B27" />
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+
+        {step === 'details' ? (
+          <>
+            <div className="auth-tabs-container">
+              {[
+                { value: 'sign-in' as const, label: 'تسجيل الدخول' },
+                { value: 'sign-up' as const, label: 'إنشاء حساب جديد' },
+              ].map((tab) => (
+                <button
+                  key={tab.value}
+                  type="button"
+                  onClick={() => switchMode(tab.value)}
+                  className={`auth-tab-btn ${mode === tab.value ? 'active' : ''}`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <form onSubmit={submitDetails} className="w-full flex flex-col">
+              {mode === 'sign-up' && !resetMode && (
+                <div className="auth-input-wrapper">
+                  <label className="auth-input-label">الاسم الكامل</label>
                   <input
                     required
-                    type="tel"
-                    inputMode="tel"
-                    value={phone}
-                    onChange={(event) => setPhone(event.target.value)}
-                    placeholder="05X XXX XXXX"
-                    autoComplete="tel"
-                    dir="ltr"
-                    className="mt-2 h-12 w-full rounded-xl border border-border bg-black/30 px-4 text-left text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
+                    minLength={2}
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    placeholder="اكتب اسمك الكامل"
+                    autoComplete="name"
+                    className="auth-input text-right"
                   />
-                  <span className="mt-1.5 block text-right text-[11px] font-normal text-muted-foreground">
-                    مثال: <span dir="ltr" className="inline-block">052 123 4567</span>
-                  </span>
-                </label>
-                <label className="relative block text-right text-sm font-bold text-foreground">
-                  {resetMode ? 'كلمة المرور الجديدة' : 'كلمة المرور'}
+                </div>
+              )}
+
+              <div className="auth-input-wrapper">
+                <label className="auth-input-label">رقم الجوال</label>
+                <input
+                  required
+                  type="tel"
+                  inputMode="tel"
+                  value={phone}
+                  onChange={(event) => setPhone(event.target.value)}
+                  placeholder="05X XXX XXXX"
+                  autoComplete="tel"
+                  dir="ltr"
+                  className="auth-input text-left"
+                />
+              </div>
+
+              <div className="auth-input-wrapper">
+                <div className="flex justify-between items-center mb-1">
+                  <label className="auth-input-label mb-0">{resetMode ? 'كلمة المرور الجديدة' : 'كلمة المرور'}</label>
                   {mode === 'sign-in' && !resetMode && (
-                    <button type="button" onClick={() => { setResetMode(true); setError(''); setNotice(''); setPassword(''); setPasswordConfirmation(''); }} className="absolute left-0 top-0 text-[10px] font-black text-primary underline-offset-2 hover:underline">
-                      تغيير كلمة المرور
+                    <button type="button" onClick={() => { setResetMode(true); setError(''); setNotice(''); setPassword(''); setPasswordConfirmation(''); }} className="auth-link">
+                      نسيت كلمة المرور؟
                     </button>
                   )}
+                </div>
+                <input
+                  required
+                  minLength={8}
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="••••••••"
+                  autoComplete={mode === 'sign-in' && !resetMode ? 'current-password' : 'new-password'}
+                  dir="ltr"
+                  className="auth-input text-left"
+                />
+              </div>
+
+              {(mode === 'sign-up' || resetMode) && (
+                <div className="auth-input-wrapper">
+                  <label className="auth-input-label">{resetMode ? 'تأكيد كلمة المرور الجديدة' : 'تأكيد كلمة المرور'}</label>
                   <input
                     required
                     minLength={8}
                     type="password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    placeholder="8 أحرف على الأقل"
-                  autoComplete={mode === 'sign-in' && !resetMode ? 'current-password' : 'new-password'}
+                    value={passwordConfirmation}
+                    onChange={(event) => setPasswordConfirmation(event.target.value)}
+                    placeholder="••••••••"
+                    autoComplete="new-password"
                     dir="ltr"
-                    className="mt-2 h-12 w-full rounded-xl border border-border bg-black/30 px-4 text-left text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
+                    className="auth-input text-left"
                   />
-                </label>
-                {(mode === 'sign-up' || resetMode) && (
-                  <label className="block text-right text-sm font-bold text-foreground">
-                    {resetMode ? 'تأكيد كلمة المرور الجديدة' : 'تأكيد كلمة المرور'}
-                    <input
-                      required
-                      minLength={8}
-                      type="password"
-                      value={passwordConfirmation}
-                      onChange={(event) => setPasswordConfirmation(event.target.value)}
-                      placeholder="أعد كتابة كلمة المرور"
-                      autoComplete="new-password"
-                      dir="ltr"
-                      className="mt-2 h-12 w-full rounded-xl border border-border bg-black/30 px-4 text-left text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
-                    />
-                  </label>
-                )}
-                {notice && (
-                  <div className="rounded-2xl border border-primary/30 bg-primary/10 p-4 text-right">
-                    <p className="text-sm font-bold text-primary">{notice}</p>
-                    <button type="button" onClick={() => switchMode('sign-up')} className="mt-3 rounded-xl bg-primary px-4 py-2 text-xs font-black text-primary-foreground">
-                      إنشاء حساب جديد
-                    </button>
-                  </div>
-                )}
-                {error && <p className="rounded-xl bg-destructive/10 p-3 text-right text-xs text-destructive">{error}</p>}
-                <button disabled={submitting} className="h-14 w-full rounded-xl bg-primary font-black text-primary-foreground transition-opacity disabled:opacity-60">
-                  {submitting ? (resetMode ? 'جارٍ إرسال رمز الاستعادة...' : mode === 'sign-in' ? 'جارٍ تسجيل الدخول...' : 'جارٍ إرسال رمز التحقق...') : resetMode ? 'إرسال رمز الاستعادة' : mode === 'sign-in' ? 'تسجيل الدخول' : 'إنشاء الحساب وإرسال الرمز'}
-                </button>
-                {resetMode && (
-                  <button type="button" onClick={() => { setResetMode(false); setError(''); setPassword(''); setPasswordConfirmation(''); }} className="w-full text-xs font-bold text-muted-foreground">
-                    العودة إلى تسجيل الدخول
-                  </button>
-                )}
-              </form>
-            </>
-          ) : (
-            <div className="text-center">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/15 text-3xl">✉</div>
-              <p className="mt-6 text-xs font-bold tracking-[0.16em] text-primary">VERIFY PHONE</p>
-               <h1 className="mt-2 text-2xl font-black text-foreground">{resetMode ? 'تأكيد استعادة كلمة المرور' : 'تأكيد رقم الهاتف'}</h1>
-              <p className="mt-3 text-sm leading-7 text-muted-foreground">
-                 أدخل الرمز المرسل عبر WhatsApp إلى
-                <span className="mx-1 font-bold text-foreground" dir="ltr">{phone}</span>
-              </p>
-              {devOtp && (
-                <div className="mt-5 rounded-2xl border border-primary/40 bg-primary/10 p-4 text-center">
-                  <p className="text-xs font-bold text-primary">رمز التطوير — استخدمه لإكمال الاختبار</p>
-                  <p dir="ltr" className="mt-2 text-3xl font-black tracking-[0.35em] text-primary">{devOtp}</p>
                 </div>
               )}
-              <form onSubmit={submitCode} className="mt-7 space-y-4">
-                <input
-                  required
-                  minLength={4}
-                  maxLength={6}
-                  inputMode="numeric"
-                  value={code}
-                  onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
-                  placeholder="000000"
-                  autoComplete="one-time-code"
-                  autoFocus
-                  aria-label="رمز التحقق"
-                  className="h-16 w-full rounded-2xl border border-primary/50 bg-black/30 px-4 text-center text-3xl tracking-[0.45em] text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
-                />
-                {error && <p className="rounded-xl bg-destructive/10 p-3 text-right text-xs text-destructive">{error}</p>}
-                <button disabled={submitting || code.length < 4} className="h-14 w-full rounded-xl bg-primary font-black text-primary-foreground transition-opacity disabled:opacity-60">
-                   {submitting ? 'جارٍ التحقق...' : resetMode ? 'تعيين كلمة المرور والدخول' : 'تأكيد الدخول'}
-                </button>
-                <button type="button" disabled={submitting} onClick={resendCode} className="w-full text-sm font-bold text-primary disabled:opacity-50">
+
+              {notice && (
+                <div className="auth-notice">
+                  <p className="text-sm font-bold text-primary mb-2">{notice}</p>
+                  <button type="button" onClick={() => switchMode('sign-up')} className="bg-primary/20 text-primary px-4 py-2 rounded-lg text-xs font-bold transition-all active:scale-[0.98]">
+                    إنشاء حساب جديد
+                  </button>
+                </div>
+              )}
+
+              {error && <div className="auth-error">{error}</div>}
+
+              <button disabled={submitting} className="auth-submit-btn">
+                {submitting ? (resetMode ? 'جارٍ إرسال الرمز...' : mode === 'sign-in' ? 'جارٍ الدخول...' : 'جارٍ الإرسال...') : resetMode ? 'إرسال الرمز' : mode === 'sign-in' ? 'تسجيل الدخول' : 'إنشاء حساب'}
+              </button>
+
+              {resetMode && (
+                <div className="text-center mt-6">
+                  <button type="button" onClick={() => { setResetMode(false); setError(''); setPassword(''); setPasswordConfirmation(''); }} className="auth-link text-[13px] text-white/50 hover:text-white">
+                    العودة إلى تسجيل الدخول
+                  </button>
+                </div>
+              )}
+            </form>
+
+            <div className="mt-8 mb-4">
+              <button
+                type="button"
+                onClick={() => void handleShare()}
+                className="w-full flex items-center justify-center gap-2 text-xs font-bold text-white/70 hover:text-white transition-colors py-2 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 rounded-lg"
+              >
+                <Share2 size={16} />
+                مشاركة التطبيق
+              </button>
+              {shareNotice && <p className="text-center text-[11px] font-bold text-primary mt-1">{shareNotice}</p>}
+            </div>
+          </>
+        ) : (
+          <div className="flex flex-col text-center w-full">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary mb-6">
+              <Mail size={32} strokeWidth={1.5} />
+            </div>
+
+            <h1 className="text-2xl font-black text-white mb-2">{resetMode ? 'تأكيد استعادة كلمة المرور' : 'تأكيد رقم الهاتف'}</h1>
+            <p className="text-sm text-white/60 mb-8 leading-relaxed">
+              أدخل الرمز المرسل عبر WhatsApp إلى<br/>
+              <span className="font-bold text-white tracking-widest inline-block mt-1" dir="ltr">{phone}</span>
+            </p>
+
+            {devOtp && (
+              <div className="bg-primary/10 border border-primary/30 rounded-xl p-4 mb-6 text-center">
+                <p className="text-xs text-primary mb-2">رمز التطوير (للاختبار)</p>
+                <p dir="ltr" className="text-3xl font-black tracking-[0.3em] text-primary">{devOtp}</p>
+              </div>
+            )}
+
+            <form onSubmit={submitCode} className="w-full flex flex-col gap-5">
+              <input
+                required
+                minLength={4}
+                maxLength={6}
+                inputMode="numeric"
+                value={code}
+                onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="000000"
+                autoComplete="one-time-code"
+                autoFocus
+                className="w-full bg-black/40 border border-white/20 rounded-xl h-16 text-center text-3xl tracking-[0.5em] text-white focus:border-primary outline-none transition-colors"
+              />
+
+              {error && <div className="auth-error">{error}</div>}
+
+              <button disabled={submitting || code.length < 4} className="auth-submit-btn">
+                {submitting ? 'جارٍ التحقق...' : resetMode ? 'تأكيد الدخول' : 'تأكيد الدخول'}
+              </button>
+
+              <div className="flex flex-col gap-4 mt-2">
+                <button type="button" disabled={submitting} onClick={resendCode} className="auth-link text-[13px]">
                   إعادة إرسال الرمز
                 </button>
-                <button type="button" onClick={() => { setStep('details'); setError(''); }} className="w-full text-xs font-bold text-muted-foreground">
+                <button type="button" onClick={() => { setStep('details'); setError(''); }} className="auth-link text-[13px] text-white/50 hover:text-white">
                   تعديل رقم الهاتف
                 </button>
-              </form>
-            </div>
-          )}
+              </div>
+            </form>
+          </div>
+        )}
+
+        <div className="auth-bottom-deco">
+          <div className="h-[1px] w-16 bg-gradient-to-r from-transparent to-primary/60"></div>
+          <div className="mx-4 w-2 h-2 rotate-45 bg-primary/80"></div>
+          <div className="h-[1px] w-16 bg-gradient-to-l from-transparent to-primary/60"></div>
         </div>
       </div>
-    </Screen>
+    </div>
   );
 }
 
 function ProtectedPage({ children }: { children: ReactNode }) {
-  const { user, isLoading } = usePhoneAuth();
-  if (isLoading) {
-    return <Screen className="items-center justify-center"><p className="text-sm text-muted-foreground">جارٍ تحميل حسابك...</p></Screen>;
+  const { user, isLoading, startupError, retryStartup } = usePhoneAuth();
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    setSlow(false);
+    if (!isLoading) return;
+    const timer = window.setTimeout(() => setSlow(true), 3000);
+    return () => window.clearTimeout(timer);
+  }, [isLoading]);
+  if (isLoading || startupError) {
+    return (
+      <Screen className="items-center justify-center">
+        <div role="status" className="max-w-sm rounded-2xl bg-black/80 p-6 text-center">
+          <LogoMark />
+          <p className="mt-5 text-sm text-white">{startupError || 'جارٍ فتح حسابك...'}</p>
+          {!startupError && slow && <p className="mt-3 text-sm leading-7 text-white/75">الخادم يستيقظ بعد فترة خمول، وقد يستغرق ذلك نحو دقيقة. لا حاجة لإعادة تسجيل الدخول.</p>}
+          {startupError && <button type="button" onClick={retryStartup} className="mt-5 rounded-xl bg-primary px-6 py-3 font-bold text-primary-foreground">إعادة الاتصال</button>}
+        </div>
+      </Screen>
+    );
   }
   return user ? <SalonProvider>{children}</SalonProvider> : <AuthScreen initialMode="sign-in" />;
 }
@@ -404,6 +519,7 @@ function App() {
 
 function IosInstallPrompt() {
   const [visible, setVisible] = useState(false);
+  const [shareNotice, setShareNotice] = useState('');
 
   useEffect(() => {
     const userAgent = navigator.userAgent;
@@ -432,15 +548,37 @@ function IosInstallPrompt() {
     setVisible(false);
   };
 
+  const shareApp = async () => {
+    try {
+      const result = await shareApplication();
+      setShareNotice(result === 'copied' ? 'تم نسخ رابط التطبيق' : 'تم فتح المشاركة');
+      window.setTimeout(() => setShareNotice(''), 2500);
+    } catch (error) {
+      // Closing the native share sheet is not an error.
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      setShareNotice('تعذرت المشاركة حالياً');
+      window.setTimeout(() => setShareNotice(''), 2500);
+    }
+  };
+
   return (
     <aside className="ios-install-prompt" role="status" dir="rtl">
       <button className="ios-install-prompt-close" onClick={dismiss} aria-label="إغلاق">
         <X size={16} />
       </button>
-      <div className="ios-install-prompt-icon" aria-hidden="true"><Share2 size={18} /></div>
+      <button
+        type="button"
+        className="ios-install-prompt-icon cursor-pointer transition-transform hover:scale-105 active:scale-95"
+        onClick={() => void shareApp()}
+        aria-label="مشاركة تطبيق البارون"
+        title="مشاركة التطبيق"
+      >
+        <Share2 size={18} />
+      </button>
       <div className="ios-install-prompt-copy">
         <strong>ثبّت تطبيق البارون على جهازك</strong>
         <span>من Safari اضغط «مشاركة» ثم «إضافة إلى الشاشة الرئيسية».</span>
+        {shareNotice && <small role="status">{shareNotice}</small>}
       </div>
     </aside>
   );

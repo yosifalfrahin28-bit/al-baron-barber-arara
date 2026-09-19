@@ -32,10 +32,87 @@
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
+    position: relative;
+    isolation: isolate;
     background: #070707;
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
     -webkit-tap-highlight-color: transparent;
   }
+
+  body::before,
+  body::after {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    content: "";
+    background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
+    filter: saturate(0.72) contrast(0.9);
+  }
+
+  body::before {
+    background-image:
+      linear-gradient(180deg, rgba(7, 7, 7, 0.88), rgba(7, 7, 7, 0.72)),
+      url("/barber-shop-background-1.jpeg");
+    opacity: 0.66;
+  }
+
+  body::after {
+    background-image:
+      linear-gradient(180deg, rgba(7, 7, 7, 0.9), rgba(7, 7, 7, 0.78)),
+      url("/barber-shop-background-2.jpeg");
+    opacity: 0.28;
+    mix-blend-mode: screen;
+  }
+
+  #root {
+    position: relative;
+    z-index: 0;
+  }
+}
+
+.login-panel {
+  position: relative;
+  overflow: hidden;
+}
+
+.login-panel::before {
+  position: absolute;
+  right: 14%;
+  bottom: 0;
+  left: 14%;
+  height: 2px;
+  content: "";
+  background: linear-gradient(90deg, transparent, rgba(212, 175, 55, 0.95), transparent);
+  box-shadow: 0 0 18px rgba(212, 175, 55, 0.35);
+}
+
+.login-brand {
+  display: grid;
+  width: 8.25rem;
+  height: 8.25rem;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(212, 175, 55, 0.8);
+  border-radius: 999px;
+  background: #080808;
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.5));
+}
+
+.login-brand img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.login-field input {
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.login-field input:focus {
+  box-shadow: 0 6px 18px -14px rgba(212, 175, 55, 0.9);
 }
 
 .ios-install-prompt {
